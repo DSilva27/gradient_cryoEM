@@ -3,6 +3,7 @@
 #include <fstream>
 #include <vector>
 #include <cmath>
+#include <algorithm>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,11 +28,11 @@ int main(){
 
 void I_calculated(vec &q, vec &x_c, vec &y_c, double sigma, int n, float res, mat &Ixy, vec &x, vec &y){
 
-  double xmin = std::min_element(x_c.begin(), x_c.end());
-  double xmax = std::max_element(x_c.begin(), x_c.end());
+  auto xmin = std::min_element(x_c.begin(), x_c.end());
+  auto xmax = std::max_element(x_c.begin(), x_c.end());
     
-  double ymin = std::min_element(y_c.begin(), y_c.end());
-  double ymax = std::max_element(y_c.begin(), y_c.end());
+  auto ymin = std::min_element(y_c.begin(), y_c.end());
+  auto ymax = std::max_element(y_c.begin(), y_c.end());
 
   double a_x = (xmax - xmin)/(res-1.0);
   double a_y = (ymax - ymin)/(res-1.0);
@@ -41,17 +42,20 @@ void I_calculated(vec &q, vec &x_c, vec &y_c, double sigma, int n, float res, ma
   std::generate(x.begin(), x.end(), [n=0, &a_x]() mutable { return n++ * a_x; });
   std::generate(y.begin(), y.end(), [n=0, &a_y]() mutable { return n++ * a_y; });
 
-  Ixy.resize(res, res);
+  Ixy.resize(res);
+  for (int i = 0; i < res; i++) {
+    
+    Ixy[i].resize(res);
+  }
 
   for (int i=0; i<res; i++){ for (int j=0; j<res; j++){ Ixy[i][j] = 0; }}
 
   for (int atom=0; atom<x_c.size(); atom++){
 
     std::vector <double> g_x(res, 0.0);
-    std::vector <double> g_y(res, 0.0);     
+    std::vector <double> g_y(res, 0.0);
+    
   }
-
-  
 }
 
 void quaternion_rotation(vec &q, vec &x_c, vec &y_c, vec &z_c, vec &x_r, vec &y_r, vec &z_r){
@@ -69,7 +73,7 @@ void quaternion_rotation(vec &q, vec &x_c, vec &y_c, vec &z_c, vec &x_r, vec &y_
   double q20 = 2*q[1]*q[3] - 2*q[2]*q[0];
   double q21 = 2*q[2]*q[3] - 2*q[1]*q[0];
   double q22 = 1 - 2*std::pow(q[1],2) - 2*std::pow(q[2],2);
-  vec q2{ q20, q21, q22}
+  vec q2{ q20, q21, q22};
 
   std::vector <vec> Q{ q0, q1, q2 };
   
