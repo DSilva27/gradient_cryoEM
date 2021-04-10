@@ -7,7 +7,7 @@ CXX = c++
 
 CXXFLAGS = -ansi -pedantic -std=c++14  -O3
 
-TARGETS = main
+TARGETS = main.out
 
 all: $(TARGETS)
 

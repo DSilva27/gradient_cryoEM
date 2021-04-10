@@ -53,7 +53,7 @@ int main(){
 
   std::vector <std::vector <double>> Iexp(Ixy.size(), std::vector<double> (Ixy.size(), 0));
 
-  I_with_noise(Ixy, Iexp);
+  I_with_noise(Ixy, Iexp, 0.1);
   double S = collective_variable(Ixy, Iexp);
 
   vec Sgrad;
