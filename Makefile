@@ -3,9 +3,9 @@
 .DEFAULT: all
 
 
-CXX = c++
-
-CXXFLAGS = -ansi -pedantic -std=c++14  -O3
+CXX = g++
+#-fopenmp
+CXXFLAGS = -std=c++14 -O2
 
 TARGETS = main.out
 

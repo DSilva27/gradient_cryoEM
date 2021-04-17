@@ -28,6 +28,7 @@ void linspace(vec &, double, double, int);
 void where(vec &, std::vector<size_t> &, double, double);
 void matmul(mat &, mat &, mat &);
 void transpose(mat &, mat &);
+void print_image(mat &);
 
 int main(){
 
@@ -50,6 +51,7 @@ int main(){
   mat Ixy; vec x; vec y;
 
   I_calculated(x_rot, y_rot, sigma, n, res, Ixy, x, y);
+  print_image(Ixy);
 
   std::vector <std::vector <double>> Iexp(Ixy.size(), std::vector<double> (Ixy.size(), 0));
 
@@ -59,6 +61,8 @@ int main(){
   vec Sgrad;
 
   gradient(Ixy, Iexp, x, x_rot, sigma);
+
+ 
   
   return 0;
 }
@@ -78,7 +82,7 @@ void read_data(vec &x_a,  vec &y_a,  vec &z_a){
   // ! I'm not going to go into much detail here, because this will be replaced soon.
   // ! It's just for testing
 
-  std::system("awk '($1==\"ATOM\") {print $7 \"\t\" $8 \"\t\" $9}' 1xck.pdb > tmp.txt");
+/*   std::system("awk '($1==\"ATOM\") {print $7 \"\t\" $8 \"\t\" $9}' 1xck.pdb > tmp.txt");
   std::system("wc -l tmp.txt > n_atoms.txt");
 
   
@@ -103,9 +107,34 @@ void read_data(vec &x_a,  vec &y_a,  vec &z_a){
     z_a.push_back(z);
   }
 
-  file.close();
-
+  file.close(); 
   std::system("rm tmp.txt && rm n_atoms.txt");
+  */
+
+  std::ifstream xfile, yfile, zfile;
+  xfile.open("xcoord.txt");
+  yfile.open("ycoord.txt");
+  zfile.open("zcoord.txt");
+
+  double x;
+  double y;
+  double z;
+
+  while(!xfile.eof()){
+
+    xfile >> x;
+    yfile >> y;
+    zfile >> z;
+
+    x_a.push_back(x);
+    y_a.push_back(y);
+    z_a.push_back(z);
+  }
+
+  xfile.close();
+  yfile.close();
+  zfile.close();
+
 }
 
 void center_coord(vec &x_a,  vec &y_a,  vec &z_a){
@@ -173,7 +202,7 @@ void quaternion_rotation(vec &q, vec &x_a,  vec &y_a,  vec &z_a,  vec &x_r, vec 
   vec q1{ q10, q11, q12 };
 
   double q20 = 2*q[1]*q[3] - 2*q[2]*q[0];
-  double q21 = 2*q[2]*q[3] - 2*q[1]*q[0];
+  double q21 = 2*q[2]*q[3] + 2*q[1]*q[0];
   double q22 = 1 - 2*std::pow(q[1],2) - 2*std::pow(q[2],2);
   vec q2{ q20, q21, q22};
 
@@ -183,9 +212,9 @@ void quaternion_rotation(vec &q, vec &x_a,  vec &y_a,  vec &z_a,  vec &x_r, vec 
   
   for (unsigned int i=0; i<n; i++){
 
-    x_r[i] = x_a[i]*Q[0][0] + y_a[i]*Q[1][0] + z_a[i]*Q[2][0];
-    y_r[i] = x_a[i]*Q[0][1] + y_a[i]*Q[1][1] + z_a[i]*Q[2][1];
-    z_r[i] = x_a[i]*Q[0][2] + y_a[i]*Q[1][2] + z_a[i]*Q[2][2];
+    x_r[i] = x_a[i]*Q[0][0] + y_a[i]*Q[0][1] + z_a[i]*Q[0][2];
+    y_r[i] = x_a[i]*Q[1][0] + y_a[i]*Q[1][1] + z_a[i]*Q[1][2];
+    z_r[i] = x_a[i]*Q[2][0] + y_a[i]*Q[2][1] + z_a[i]*Q[2][2];
 
   }
 }
@@ -220,8 +249,8 @@ void I_calculated(vec &x_a,  vec &y_a,  double sigma, int n, int res, mat &Ixy, 
   x.resize(res); y.resize(res);
 
   //Generate them
-  linspace(x, xmin, xmax, res);
-  linspace(y, ymin, ymax, res);
+  linspace(x, xmin-1, xmax+1, res);
+  linspace(y, ymin-1, ymax+1, res);
 
   //Turn Ixy into a res x res matrix
   Ixy.resize(res);
@@ -238,6 +267,7 @@ void I_calculated(vec &x_a,  vec &y_a,  double sigma, int n, int res, mat &Ixy, 
   std::vector <double> g_x(res, 0.0);
   std::vector <double> g_y(res, 0.0);
   
+  //#pragma omp parallel for
   for (int atom=0; atom<x_a.size(); atom++){
 
     //calculates the indices that satisfy |x - x_atom| <= n*sigma
@@ -263,11 +293,19 @@ void I_calculated(vec &x_a,  vec &y_a,  double sigma, int n, int res, mat &Ixy, 
       }
     }
 
+    if (atom == 100){
+
+      std::cout << y_a[atom] << std::endl;
+      for(int i=0; i < x_sel.size(); i++){
+        std::cout << y_sel[i] << ", " << std::endl;
+      }
+    }
+
     //Reset the vectors for the gaussians and selection
     x_sel.clear(); y_sel.clear();
 
     g_x.clear(); g_y.clear();
-    g_x.resize(res); g_x.resize(res);
+    g_x.resize(res); g_y.resize(res);
     std::fill(g_x.begin(), g_x.end(), 0);
     std::fill(g_y.begin(), g_y.end(), 0);
   }
@@ -481,5 +519,22 @@ void matmul(mat &A, mat &B, mat &C){
   }
 }
 
+void print_image(mat &Im){
 
+  std::ofstream matrix_file;
+  matrix_file.open ("Ical.txt");
+  int N = Im.size();
+  int M = Im[0].size();
+
+  std::cout.precision(3);
+
+  for (int i=0; i<N; i++){
+    for (int j=0; j<M; j++){
+
+      matrix_file << std::scientific << std::showpos << Im[i][j] << " " << " \n"[j==M-1];
+    }
+  }
+
+  matrix_file.close();
+}
 
