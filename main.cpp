@@ -21,7 +21,7 @@ void quaternion_rotation(vec &, vec &, vec &, vec &, vec &, vec &, vec &);
 void I_calculated(vec &, vec &, double, int, int, mat &, vec &, vec &);
 void I_with_noise(mat &, mat &, double);
 double collective_variable(mat &, mat &);
-void gradient(mat &, mat &, vec &, vec &, double);
+void gradient(mat &, mat &, vec &, vec &, vec &, double);
 
 //Utilities
 void linspace(vec &, double, double, int);
@@ -58,11 +58,8 @@ int main(){
   I_with_noise(Ixy, Iexp, 0.1);
   double S = collective_variable(Ixy, Iexp);
 
-  vec Sgrad;
-
-  gradient(Ixy, Iexp, x, x_rot, sigma);
-
- 
+  std::vector <double> Sgrad(N, 0);
+  gradient(Ixy, Iexp, x, x_rot, Sgrad, sigma);
   
   return 0;
 }
@@ -293,14 +290,6 @@ void I_calculated(vec &x_a,  vec &y_a,  double sigma, int n, int res, mat &Ixy, 
       }
     }
 
-    if (atom == 100){
-
-      std::cout << y_a[atom] << std::endl;
-      for(int i=0; i < x_sel.size(); i++){
-        std::cout << y_sel[i] << ", " << std::endl;
-      }
-    }
-
     //Reset the vectors for the gaussians and selection
     x_sel.clear(); y_sel.clear();
 
@@ -358,7 +347,7 @@ double collective_variable(mat &Ical, mat &Iexp){
    * @return s the value of the collective variable
    */
 
-  double s; //to store the collective variable
+  double s=0; //to store the collective variable
 
   //TODO: improve the raising of this warning
   if (Ical.size() != Iexp.size()){ 
@@ -367,28 +356,20 @@ double collective_variable(mat &Ical, mat &Iexp){
     return 0;
   }
 
-
   int N = Ical.size();
   int M = Ical[0].size();
-
-  //Creates of matrices of dimension NxM filled with zeros
-  std::vector <std::vector <double>> Icc(N, std::vector<double> (M, 0));
-  std::vector <std::vector <double>> Iexp_T(N, std::vector<double> (M, 0));
-
-  transpose(Iexp, Iexp_T);
-  matmul(Ical, Iexp_T, Icc);
 
   for (int i=0; i<N; i++){
     for (int j=0; j<M; j++){
 
-      s += Icc[i][j];
+      s += Ical[i][j] * Iexp[i][j];
     }
   }
 
   return -s;
 }
 
-void gradient(mat &Ical, mat &Iexp, vec &r, vec &r_a,  double sigma){
+void gradient(mat &Ical, mat &Iexp, vec &r, vec &r_a, vec &sgrad, double sigma){
 
   /**
    * @brief Calculates the gradient of the colective variable (s) for image w along r_a 
@@ -418,13 +399,12 @@ void gradient(mat &Ical, mat &Iexp, vec &r, vec &r_a,  double sigma){
   transpose(Iexp, Iexp_T);
   matmul(Ical, Iexp_T, Sxy);
 
-  std::vector <double> sgrad(r_a.size());
-
   for (int i=0; i<sgrad.size(); i++){
     for (int j=0; j<r.size(); j++){
 
-      sgrad[i] -= (r[j] - r_a[i]) * Sxy[j][j] / std::pow(sigma, 2);
+      sgrad[i] += (r_a[i] - r[j]) * Sxy[j][j];
     }
+    sgrad[i] /= std::pow(sigma, 2);
   }
 }
 
