@@ -1,12 +1,14 @@
 #define _USE_MATH_DEFINES
 
 #include <iostream>
+#include <iomanip>
 #include <string> 
 #include <fstream>
 #include <vector>
 #include <cmath>
 #include <algorithm>
 #include <random>
+#include <cstdlib>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,28 +31,43 @@ void where(vec &, std::vector<size_t> &, double, double);
 void matmul(mat &, mat &, mat &);
 void transpose(mat &, mat &);
 void print_image(mat &);
+void load_parameters(int &, double &, int &);
+void load_quaternions(vec &);
+void results_to_json(double, vec &, vec &, vec &);
 
 int main(){
 
   //Define all the variables that are going to be used  
   vec x_coord; vec y_coord; vec z_coord;
 
-  int n = 3;
-  double sigma = 1;
-  int res = 128;
-  vec q = {0, 0, 1/std::sqrt(2), 1/std::sqrt(2)};
+  int n;
+  double sigma;
+  int res;
+  
+  //Load data in data/input/parameters.txt
+  load_parameters(n, sigma, res);
 
+  //Read coordinates of the atoms
   read_data(x_coord, y_coord, z_coord);
+  int N = x_coord.size(); //number of atoms
+
+  /*
+  //Move the center of mass to the origin
   center_coord(x_coord, y_coord, z_coord);
 
-  int N = x_coord.size();
+  std::vector <double> q(4, 0);
+  //Fill vector q with the parameters of the quaternion rotation matrix
+  load_quaternions(q);
+  //create vector for the rotated coordinates
   vec x_rot(N); vec y_rot(N); vec z_rot(N);
 
   quaternion_rotation(q, x_coord, y_coord, z_coord, x_rot, y_rot, z_rot);
+  */
 
   mat Ixy; vec x; vec y;
 
-  I_calculated(x_rot, y_rot, sigma, n, res, Ixy, x, y);
+  //The coordinates are given already centered and rotated
+  I_calculated(x_coord, y_coord, sigma, n, res, Ixy, x, y);
   print_image(Ixy);
 
   std::vector <std::vector <double>> Iexp(Ixy.size(), std::vector<double> (Ixy.size(), 0));
@@ -58,8 +75,14 @@ int main(){
   I_with_noise(Ixy, Iexp, 0.1);
   double S = collective_variable(Ixy, Iexp);
 
-  std::vector <double> Sgrad(N, 0);
-  gradient(Ixy, Iexp, x, x_rot, Sgrad, sigma);
+  std::vector <double> Sgrad_x(N, 0);
+  std::vector <double> Sgrad_y(N, 0);
+  std::vector <double> Sgrad_z(N, 0);
+
+  gradient(Ixy, Iexp, x, x_coord, Sgrad_x, sigma);
+  gradient(Ixy, Iexp, y, y_coord, Sgrad_y, sigma);
+
+  results_to_json(S, Sgrad_x, Sgrad_y, Sgrad_z);
   
   return 0;
 }
@@ -79,59 +102,37 @@ void read_data(vec &x_a,  vec &y_a,  vec &z_a){
   // ! I'm not going to go into much detail here, because this will be replaced soon.
   // ! It's just for testing
 
-/*   std::system("awk '($1==\"ATOM\") {print $7 \"\t\" $8 \"\t\" $9}' 1xck.pdb > tmp.txt");
-  std::system("wc -l tmp.txt > n_atoms.txt");
-
+  std::ifstream xfile, yfile, zfile;
+  xfile.open("data/input/xcoord.txt");
+  yfile.open("data/input/ycoord.txt");
+  zfile.open("data/input/zcoord.txt");
   
-  float x, y, z;
-
-    std::ifstream file;
-
-  int M;
+  std::string data;
   
-  file.open("n_atoms.txt");
-  file >> M;
-  file.close();
+  while(std::getline(xfile, data)){
 
-  file.open("tmp.txt");
-
-  for (unsigned int i=0; i<M; i++){
-
-    file >> x >> y >> z;
-    
-    x_a.push_back(x);
-    y_a.push_back(y);
-    z_a.push_back(z);
+    if(data.size() > 0){
+      x_a.push_back(std::stod(data));
+    }
   }
 
-  file.close(); 
-  std::system("rm tmp.txt && rm n_atoms.txt");
-  */
+  while(std::getline(yfile, data)){
 
-  std::ifstream xfile, yfile, zfile;
-  xfile.open("xcoord.txt");
-  yfile.open("ycoord.txt");
-  zfile.open("zcoord.txt");
+    if(data.size() > 0){
+      y_a.push_back(std::stod(data));
+    }
+  }
 
-  double x;
-  double y;
-  double z;
+  while(std::getline(zfile, data)){
 
-  while(!xfile.eof()){
-
-    xfile >> x;
-    yfile >> y;
-    zfile >> z;
-
-    x_a.push_back(x);
-    y_a.push_back(y);
-    z_a.push_back(z);
+    if(data.size() > 0){
+      z_a.push_back(std::stod(data));
+    }
   }
 
   xfile.close();
   yfile.close();
   zfile.close();
-
 }
 
 void center_coord(vec &x_a,  vec &y_a,  vec &z_a){
@@ -263,8 +264,7 @@ void I_calculated(vec &x_a,  vec &y_a,  double sigma, int n, int res, mat &Ixy, 
   //Vectors to store the values of the gaussians
   std::vector <double> g_x(res, 0.0);
   std::vector <double> g_y(res, 0.0);
-  
-  //#pragma omp parallel for
+
   for (int atom=0; atom<x_a.size(); atom++){
 
     //calculates the indices that satisfy |x - x_atom| <= n*sigma
@@ -502,7 +502,7 @@ void matmul(mat &A, mat &B, mat &C){
 void print_image(mat &Im){
 
   std::ofstream matrix_file;
-  matrix_file.open ("Ical.txt");
+  matrix_file.open ("data/output/Ical.txt");
   int N = Im.size();
   int M = Im[0].size();
 
@@ -518,3 +518,175 @@ void print_image(mat &Im){
   matrix_file.close();
 }
 
+void load_parameters(int &n, double &sigma, int &res) {
+
+  char letter, eq;
+  double value;
+
+  std::ifstream file;
+  file.open("data/input/parameters.txt");
+
+  if (file.fail()){
+    std::cout << "Warning: file parameters.txt doesn't exist" << std::endl;
+
+    return;
+  }
+
+  while (file >> letter >> eq >> value) {
+
+    switch (letter) {
+
+    case 'N':
+      n = (int)value;
+      break;
+
+    case 'S':
+      sigma = value;
+      break;
+
+    case 'R':
+      res = (int)value;
+      break;
+
+    default:
+
+      std::cout << "InputError: undefined parameter in parameters.txt" << std::endl;
+      break;
+    }
+  }
+
+  file.close();
+}
+
+void load_quaternions(vec &q){
+  
+  char letter, eq;
+  double value;
+
+  std::ifstream file;
+  file.open("data/input/quaternions.txt");
+
+  if (file.fail()){
+    std::cout << "Warning: file quaternions.txt doesn't exist" << std::endl;
+
+    return;
+  }
+
+  while (file >> letter >> eq >> value) {
+
+    switch (letter) {
+
+    case 'A':
+      q[0] = value;
+      break;
+
+    case 'B':
+      q[1] = value;
+      break;
+
+    case 'C':
+      q[2] = value;
+      break;
+      
+    case 'D':
+      q[3] = value;
+      break;
+
+    default:
+
+      std::cout << "InputError: undefined parameter in quaternions.txt" << std::endl;
+      break;
+    }
+  }
+
+  file.close();
+}
+
+void results_to_json(double s, vec &sgrad_x, vec &sgrad_y, vec &sgrad_z) {
+
+  std::ofstream gradfile;
+
+  gradfile.open("data/output/grad.json");
+
+  //begin json file
+  gradfile << "[" << std::endl;
+  gradfile << std::setw(4) << "{" << std::endl;
+
+  //save colvar
+  gradfile << std::setw(10) << "\"s\": "
+           << s << "," << std::endl;
+
+  //begin sgrad_x
+  gradfile << std::setw(17) << "\"sgrad_x\":"
+           << "[" << std::endl;
+
+  for (int j=0; j<sgrad_x.size(); j++) {
+
+    if (j == sgrad_x.size() - 1) {
+
+      gradfile << std::setw(17) << std::left << " " << sgrad_x[j]
+               << std::endl;
+    }
+
+    else {
+      gradfile << std::setw(17) << std::left << " " << sgrad_x[j] << ","
+               << std::endl;
+    }
+  }
+
+  gradfile << std::setw(6) << " "
+           << "]," << std::endl;
+  //end sgrad_x
+
+  //begin sgrad_y
+  gradfile << std::setw(17) << "\"sgrad_y\":"
+           << "[" << std::endl;
+
+  for (int j=0; j<sgrad_y.size(); j++) {
+
+    if (j == sgrad_y.size() - 1) {
+
+      gradfile << std::setw(17) << std::left << " " << sgrad_y[j]
+               << std::endl;
+    }
+
+    else {
+      gradfile << std::setw(17) << std::left << " " << sgrad_y[j] << ","
+               << std::endl;
+    }
+  }
+
+  gradfile << std::setw(6) << " "
+           << "]," << std::endl;
+
+  //end sgrad_y
+
+  //begin sgrad_z
+  gradfile << std::setw(17) << "\"sgrad_z\":"
+           << "[" << std::endl;
+
+  for (int j=0; j<sgrad_z.size(); j++) {
+
+    if (j == sgrad_z.size() - 1) {
+
+      gradfile << std::setw(17) << std::left << " " << sgrad_z[j]
+               << std::endl;
+    }
+
+    else {
+      gradfile << std::setw(17) << std::left << " " << sgrad_z[j] << ","
+               << std::endl;
+    }
+  }
+
+  gradfile << std::setw(6) << " "
+           << "]" << std::endl;
+  //end sgrad_z
+
+  //end json file
+  gradfile << std::setw(4) << " "
+           << "}" << std::endl;
+
+  gradfile << "]" << std::endl;
+  gradfile.close();
+}

@@ -2,7 +2,7 @@
 STEPS TO MAKE AN IMAGE FROM A PDB 
 #####  
 
-Biophython --- > READ PDB
+Biopython --- > READ PDB
 
 -> extract X,Y,Z
 
