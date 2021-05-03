@@ -30,7 +30,7 @@ void linspace(vec &, double, double, int);
 void where(vec &, std::vector<size_t> &, double, double);
 void matmul(mat &, mat &, mat &);
 void transpose(mat &, mat &);
-void print_image(mat &);
+void print_image(mat &, std::string);
 void load_parameters(int &, double &, int &);
 void load_quaternions(vec &);
 void results_to_json(double, vec &, vec &, vec &);
@@ -68,11 +68,13 @@ int main(){
 
   //The coordinates are given already centered and rotated
   I_calculated(x_coord, y_coord, sigma, n, res, Ixy, x, y);
-  print_image(Ixy);
 
   std::vector <std::vector <double>> Iexp(Ixy.size(), std::vector<double> (Ixy.size(), 0));
 
-  I_with_noise(Ixy, Iexp, 0.1);
+  I_with_noise(Ixy, Iexp, 8);
+  print_image(Ixy, "data/output/Iclean.txt");
+  print_image(Iexp, "data/output/Inoise.txt");
+
   double S = collective_variable(Ixy, Iexp);
 
   std::vector <double> Sgrad_x(N, 0);
@@ -326,7 +328,7 @@ void I_with_noise(mat &I_i, mat &I_f, double std=0.1){
   for (int i=0; i<I_i.size(); i++){
     for (int j=0; j< I_i[i].size(); j++){
 
-      I_f[i][j] += dist(generator);
+      I_f[i][j] = dist(generator) + I_i[i][j];
     }
   }
 }
@@ -499,10 +501,10 @@ void matmul(mat &A, mat &B, mat &C){
   }
 }
 
-void print_image(mat &Im){
+void print_image(mat &Im, std::string fname){
 
   std::ofstream matrix_file;
-  matrix_file.open ("data/output/Ical.txt");
+  matrix_file.open (fname);
   int N = Im.size();
   int M = Im[0].size();
 
