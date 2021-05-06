@@ -361,14 +361,20 @@ double collective_variable(mat &Ical, mat &Iexp){
   int N = Ical.size();
   int M = Ical[0].size();
 
+  double Ical_sum = 0;
+  double Iexp_sum = 0;
+
   for (int i=0; i<N; i++){
     for (int j=0; j<M; j++){
 
       s += Ical[i][j] * Iexp[i][j];
+      Ical_sum += Ical[i][j] * Ical[i][j];
+      Iexp_sum += Iexp[i][j] * Iexp[i][j];
     }
   }
 
-  return -s;
+  //Normalize cv
+  return -s / (Ical_sum * Iexp_sum);
 }
 
 void gradient(mat &Ical, mat &Iexp, vec &r, vec &r_a, vec &sgrad, double sigma){
