@@ -1,23 +1,19 @@
-.PHONY: all clean
-
-.DEFAULT: all
-
-
-CXX = g++
-
-CXXFLAGS = -std=c++14 -O3 -openmp
+IDIR = include
+CC = g++
+CFLAGS = -std=c++14 -O3 -I$(IDIR) -lm -lfftw3f 
 
 SDIR = src
-_SRC = main.cpp
+
+_DEPS = gradcv.h 
+DEPS = $(patsubst %,$(IDIR)/%,$(_DEPS))
+
+_SRC = main.cpp gradcv.cpp
 SRC = $(patsubst %,$(SDIR)/%,$(_SRC))
 
-TARGETS = main.out
+gradcv.out: $(SRC) $(OBJ)
+	$(CC) -o $@ $^ $(CFLAGS)
 
-all: $(TARGETS)
+.PHONY: clean
 
 clean:
-	rm -f $(TARGETS)
-
-$(TARGETS) : $(SRC)
-			 $(CXX) $(CXXFLAGS) -o $@ $<
-
+	rm -f $(ODIR)/*.o *~ core $(INCDIR)/*~ 

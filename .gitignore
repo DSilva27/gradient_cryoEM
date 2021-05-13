@@ -34,4 +34,4 @@
 *~ 
 .ipynb_checkpoints
 .vscode
-experiments*
+experiments/
