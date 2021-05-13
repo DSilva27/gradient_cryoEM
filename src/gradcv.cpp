@@ -762,6 +762,32 @@ int Grad_cv::read_parameters(const char *fileinput){
   }
   input.close();
 
+  if (not(yesPixSi)){
+    myError("Input missing: please provide PIXEL_SIZE");
+  }
+  if (not(yesNumPix)){
+    myError("Input missing: please provide NUMBER_PIXELS");
+  }
+  if (not(yesBFact)){
+    myError("Input missing: please provide CTF_B_ENV");
+  }
+  if (not(yesAMP)){
+    myError("Input missing: please provide CTF_AMPLITUD");
+  }
+  if (not(yesDefocus)){
+    myError("Input missing: please provide DEFOCUS");
+  }
+  if (not(yesSigmaCV)){
+    myError("Input missing: please provide SIGMA");
+  }
+  if (not(yesSigmaReach)){
+    myError("Input missing: please provide SIGMA_REACH");
+  }
+
+  if (elecwavel == 0.019688)
+    std::cout << "Using default electron wave length: 0.019688 (A) of 300kV "
+            "microscope\n";
+
   return 0;
 }
 
