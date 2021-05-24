@@ -769,7 +769,7 @@ int Grad_cv::read_parameters(const char *fileinput){
     myError("Input missing: please provide NUMBER_PIXELS");
   }
   if (not(yesBFact)){
-    myError("Input missing: please provide CTF_B_ENV");
+    myError("Input missing: please provide CTF_ENV");
   }
   if (not(yesAMP)){
     myError("Input missing: please provide CTF_AMPLITUD");
