@@ -74,8 +74,8 @@ parser.add_argument("--system_pdb", help="name of the system pdb in the current 
 args = parser.parse_args()
 
 #Set the pdb's with their paths
-ref_pdb = '../data/input/' + args.ref_pdb
-system_pdb = '../data/input/' + args.system_pdb
+ref_pdb = "data/input/" + args.ref_pdb
+system_pdb = "data/input/" + args.system_pdb
 
 
 #Importat 1xck's PDB to extract XYZ atomic coordinates
@@ -111,7 +111,7 @@ system_atoms_aligned = quaternion_rotation(q, system_atoms_aligned)
 ### HERE AND IN THE C++?  
 
 # Save the coordinates
-if os.path.exits("data/input/coord.txt"):
+if os.path.exists("data/input/coord.txt"):
     os.system("rm ../data/input/coord.txt")
 
 with open("data/input/coord.txt", "a") as f:
@@ -120,7 +120,7 @@ with open("data/input/coord.txt", "a") as f:
 
 ### RUNNING C++
 start = time.time()
-os.system("cd .. && ./gradcv.out");
+os.system("./gradcv.out");
 print("Projection time: {}".format(time.time() - start))
 
 # Created files
