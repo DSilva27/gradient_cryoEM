@@ -47,59 +47,35 @@ void Grad_cv::read_coord(){
   // ! It's just for testing
 
   std::string coord_prefix = "data/input/";
-  std:: string x_str = "x";
-  std:: string y_str = "y";
-  std:: string z_str = "z";
 
-  std::ifstream xfile, yfile, zfile;
-  xfile.open(coord_prefix + x_str + coords_file);
-  yfile.open(coord_prefix + y_str + coords_file);
-  zfile.open(coord_prefix + z_str + coords_file);
+  std::ifstream coord_file, yfile, zfile;
+  coord_file.open(coord_prefix + coords_file);
 
   std::cout << "\n +++++++++++++++++++++++++++++++++++++++++ \n";
   std::cout << "\n   READING EM2D COORDINATES            \n\n";
   std::cout << " +++++++++++++++++++++++++++++++++++++++++ \n";
   
-if (!xfile.good()){
-    myError("Opening file: %s", coord_prefix + x_str + coords_file);
-}
-
-if (!yfile.good()){
-    myError("Opening file: %s", coord_prefix + y_str + coords_file);
-}
-
-if (!zfile.good()){
-    myError("Opening file: %s", coord_prefix + z_str + coords_file);
-}
-
-  std::string data;
-  
-  while(std::getline(xfile, data)){
-
-    if(data.size() > 0){
-      x_coord.push_back(std::stod(data));
-    }
+  if (!coord_file.good()){
+    myError("Opening file: %s", coord_prefix + coords_file);
   }
 
-  while(std::getline(yfile, data)){
+  int N; //to store the number of atoms
+  coord_file >> N;
 
-    if(data.size() > 0){
-      y_coord.push_back(std::stod(data));
-    }
-  }
+  myfloat_t a; //auxiliary variable to read from the file
 
-  while(std::getline(zfile, data)){
+  for (int col=0; col<N * 3; col++){
 
-    if(data.size() > 0){
-      z_coord.push_back(std::stod(data));
-    }
-  }
+    coord_file >> a;
+    
+    if (col < N) x_coord.push_back(a);
+    else if (col >= N && col < 2*N) y_coord.push_back(a);
+    else if (col >= 2*N) z_coord.push_back(a);
+  } 
 
-  xfile.close();
-  yfile.close();
-  zfile.close();
 
-  std::cout << "Number of atoms: " << x_coord.size() << std::endl;
+
+std::cout << "Number of atoms: " << x_coord.size() << std::endl;
 }
 
 void Grad_cv::prepare_FFTs(){
