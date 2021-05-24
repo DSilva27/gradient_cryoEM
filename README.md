@@ -5,7 +5,7 @@ Arley Flórez López, David Silva Sánchez and Pilar Cossio
 
 ## Description
 
-The Gradient Cryo-EM code calculates the correlation of the projection of an structural model with a 2d cryo-em raw image (experimental image). The projection is done by rotating the system, modeling the C-alpha atoms as gaussians and integrating in the z-direction. We then apply CTF effects to the image by Fourier convolution, we call that the calculated image. Then we calculate the cross-correlation between the calculated and experimental image and the respective gradient. 
+The Gradient Cryo-EM code calculates the correlation of the projection of a structural model with a 2d cryo-em raw image (experimental image). The projection is done by rotating the system, modeling the C-alpha atoms as gaussians and integrating in the z-direction. We then apply CTF effects to the image by Fourier convolution, we call that the calculated image. Then we calculate the cross-correlation between the calculated and experimental image and the respective gradient. 
 
 ### C++ code
 
@@ -46,5 +46,3 @@ python python/cal_gradient.py --ref_pdb [ref_pdb_without_path] --system_pdb [sys
 
 ## References
 * ...
-## Description
-...
