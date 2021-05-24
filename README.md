@@ -29,6 +29,21 @@ Dependencies and software requirements:
 
 * conda (optional): a package and virtual environment manager for python. https://docs.conda.io/en/latest/miniconda.html
 
+## Running the program
+
+* You should edit python/prep_parameters.py to set your own parameters
+* Place your pdb's in data/input/
+* Make sure you're using the venv em2d_env created by running setup_env.sh (or that you installed the necessary libraries)
+
+```
+#creates data/input/parameters.txt and data/input/quaternions.txt
+python python/prep_parameters.py
+
+#Run the main code using the python wrapper 
+python python/cal_gradient.py --ref_pdb [ref_pdb_without_path] --system_pdb [system_pdb_without_path]
+```
+
+
 ## References
 * ...
 ## Description
