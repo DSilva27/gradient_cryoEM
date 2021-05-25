@@ -118,7 +118,7 @@ public:
   
   void I_with_noise(mymatrix_t &, mymatrix_t &, myfloat_t);
   myfloat_t collective_variable();
-  void gradient(myvector_t &, myvector_t &, myvector_t &);
+  void gradient(myvector_t &, myvector_t &, myvector_t &, char);
   void run();
 
   //Utilities

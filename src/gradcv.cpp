@@ -443,7 +443,7 @@ myfloat_t Grad_cv::collective_variable(){
   return -s; // / (Icalc_sum * Iexp_sum);
 }
 
-void Grad_cv::gradient(myvector_t &r, myvector_t &r_a, myvector_t &sgrad){
+void Grad_cv::gradient(myvector_t &r, myvector_t &r_a, myvector_t &sgrad, char R){
 
   /**
    * @brief Calculates the gradient of the colective variable (s) for image w along r_a 
@@ -470,7 +470,9 @@ void Grad_cv::gradient(myvector_t &r, myvector_t &r_a, myvector_t &sgrad){
   mymatrix_t Iexp_T(number_pixels, myvector_t (number_pixels, 0));
 
   transpose(Iexp, Iexp_T);
-  matmul(Icalc, Iexp_T, Sxy);
+  
+  if (R = "x") matmul(Icalc, Iexp_T, Sxy);
+  if (R = "y") matmul(Iexp_T, Icalc, Sxy)
 
   for (int i=0; i<sgrad.size(); i++){
     for (int j=0; j<r.size(); j++){
@@ -504,8 +506,8 @@ void Grad_cv::run(){
   //Calculate the collective variable, this uses Icalc and Iexp
   s_cv = collective_variable();
 
-  gradient(x, x_coord, grad_x);
-  gradient(y, y_coord, grad_y);
+  gradient(x, x_coord, grad_x, "x");
+  gradient(y, y_coord, grad_y, "y");
   //grad_z is already initialized with zeros
 
   results_to_json(s_cv, grad_x, grad_y, grad_z);
