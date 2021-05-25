@@ -18,7 +18,8 @@ Grid Parameters
 
 CTF parameters
 * CTF_ENV: b parameter for the envelope function defined as env(s) = exp(- b * s^2 / 2)
-* CTF_DEFOCUS: defocus used when taking the experimental images
+* CTF_DEFOCUS: the synthetic image will have a random defocus, this parameters defines the lower and
+               upper limits for said random defocus.
 * CTF_AMPLITUDE: 
 
 Modeling with gaussians parameters
@@ -33,7 +34,8 @@ number_pixels = 124
 pixel_size = 1.77
 
 ctf_env = 1.0
-ctf_defocus = 1.0
+ctf_defocus_min = 1.0
+ctf_defocus_max = 3.0
 ctf_amplitude = 0.1
 
 sigma = 1
@@ -46,7 +48,7 @@ params_file.write(f"""NUMBER_PIXELS {number_pixels}
 PIXEL_SIZE {pixel_size}
 
 CTF_ENV {ctf_env}
-CTF_DEFOCUS {ctf_defocus}
+CTF_DEFOCUS {ctf_defocus_min} {ctf_defocus_max}
 CTF_AMPLITUDE {ctf_amplitude}
 
 SIGMA {sigma}

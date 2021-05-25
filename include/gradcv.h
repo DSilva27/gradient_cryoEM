@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <random>
 #include <cstdlib>
+#include <filesystem>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -54,7 +55,7 @@ class Grad_cv {
   //***************** Declare variables
   int number_pixels, number_pixels_fft_1d, sigma_reach;
   myfloat_t pixel_size, sigma_cv;
-  myfloat_t b_factor, defocus, CTF_amp, phase;
+  myfloat_t b_factor, min_defocus, max_defocus, CTF_amp, phase;
 
   //***************** Control for parameters
   bool yesPixSi = false;
@@ -66,11 +67,13 @@ class Grad_cv {
   bool yesSigmaReach = false;
   //***************** Default VALUES
   myfloat_t elecwavel = 0.019866;
+  myfloat_t SNR = 1.0;
 
 
   //Name of files used
   std::string params_file;
   std::string coords_file;
+  std::string image_file;
   
 
   //coordinates 
@@ -100,7 +103,7 @@ class Grad_cv {
 
 public:
 
-  Grad_cv(std::string, std::string);
+  Grad_cv(std::string, std::string, std::string);
   //~Grad_cv();
 
   void init_variables();
@@ -117,13 +120,17 @@ public:
   void conv_proj_ctf();
   
   void I_with_noise(mymatrix_t &, mymatrix_t &, myfloat_t);
+  myfloat_t calc_I_variance();
   myfloat_t collective_variable();
-  void gradient(myvector_t &, myvector_t &, myvector_t &, char);
+  void gradient(myvector_t &, myvector_t &, myvector_t &, const char *);
   void run();
 
   //Utilities
   void arange(myvector_t &, myfloat_t, myfloat_t, myfloat_t);
+
   void where(myvector_t &, std::vector<size_t> &, myfloat_t, myfloat_t);
+  void where(myvector_t &, myvector_t &, std::vector<int> &, myfloat_t);
+
   void matmul(mymatrix_t &, mymatrix_t &, mymatrix_t &);
   void transpose(mymatrix_t &, mymatrix_t &);
   void print_image(mymatrix_t &, std::string);
