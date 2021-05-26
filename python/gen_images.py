@@ -12,6 +12,8 @@ import MDAnalysis as mda
 from MDAnalysis.analysis import align
 from MDAnalysis.analysis.rms import rmsd
 
+from multiprocessing import Pool
+
 
 #Define the functions that will be used
 
@@ -69,8 +71,13 @@ def aligment_rotation_matrix(reference, system):
 
 parser = argparse.ArgumentParser()
 
+parser.add_argument("--n_proc", help="number of processors used. Default=1", default=1, type=int)
+parser.add_argument("--n_img", help="number of images to be created", required=True, type=int)
 parser.add_argument("--ref_pdb", help="name of the input pdb (do not include path)", required=True)
-parser.add_argument("--system_pdb", help="name of the system pdb in the current md_step pdb (do not include path)", required=True)
+parser.add_argument("--system_pdb", 
+                    help="name of the system pdb in the current md_step pdb (do not include path)", 
+                    required=True)
+
 args = parser.parse_args()
 
 #Set the pdb's with their paths
@@ -94,44 +101,29 @@ system_atoms -= system_universe.atoms.center_of_mass()
 #Rotate the coordinates
 system_atoms_aligned = np.dot(rot_matrix, system_atoms.T)
 
-##ADVICE THE QUATERNIONS SHOULD BE INPUTS THAT THE USER CAN MODIFY
-#Quaternion parameters
-'''
-If it is based from a quaternion q1 = w + xi + yj + zk, then the 
-quaternion array q should be q = [x, y, z, w]
-'''
-
-q = np.loadtxt("data/input/quaternions.txt")
-
-#Rotate them with quaternions
-system_atoms_aligned = quaternion_rotation(q, system_atoms_aligned)
-
-### ADVICE: WE HAVE TO BE CAREFUL BECAUSE IF THERE ARE MULTPLE IMAGES WE
-### WOULD OVER-WRITE THE FILES, MAYBE BETTER TO BE ABLE TO CHANGE ITS NAME 
-### HERE AND IN THE C++?  
-
 # Save the coordinates
-if os.path.exists("data/input/coord.txt"):
-    os.system("rm ../data/input/coord.txt")
+#if os.path.exists("data/input/coord.txt"):
+    #os.system("rm ../data/input/coord.txt")
 
 with open("data/input/coord.txt", "a") as f:
     f.write("{cols}\n".format(cols=system_atoms_aligned.shape[1]))
     np.savetxt(f, system_atoms_aligned, fmt='%.4f')
 
 ### RUNNING C++
+
+# Let's start with just three images
+indexes = np.array(range(0, args.n_img))
+
+def gen_img(index):
+
+    os.system(f"./gradcv.out {index} > /dev/null 2>&1")
+    return 1
+
+p = Pool(args.n_proc)
+
+print(f"Generating {len(indexes)} images...")
 start = time.time()
-os.system("./gradcv.out");
-print("Projection time: {}".format(time.time() - start))
+_ = p.map(gen_img, indexes)
+print("... done. Run time: {}".format(time.time() - start))
 
-# Created files
 
-#Inoctf.txt -> projected image without ctf and gaussian noise
-#Ictf_noise.txt -> projected image with ctf and gaussian noise
-#grad.json -> .json file where the cv and its gradient are stored
-
-### ADVICE: PUT HERE THE FUNCTION THAT WRITES OUT THE ROTATED GRADIENTS. TELL THE USER WHERE THEY ARE
-### THE CALCULATED IMAGE LEAVE IT AS AN INPUT OPTION DO NOT PRINT IT OUT ALWAYS
-
-s, grad = read_grads()
-
-grad_rot = np.dot(rot_matrix.T, grad)

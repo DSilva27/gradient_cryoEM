@@ -1,23 +1,47 @@
 #include "gradcv.h"
 
 
-Grad_cv::Grad_cv(std::string pf, std::string cf){
+Grad_cv::Grad_cv(std::string pf, std::string cf, std::string imf){
     
   params_file = "data/input/" + pf;
-  coords_file = cf;
+  coords_file = "data/input/" + cf;
+  image_file = "data/images/" + imf;
 }
+
 //Grad_cv::~Grad_cv(){}
 
 void Grad_cv::init_variables(){
 
+  //############################### Read parameters and coordinates ###################################
   read_coord();
   read_parameters(params_file.c_str());
 
   number_pixels_fft_1d = number_pixels/2 + 1;
+
+  //Generate random defocus and calculate the phase
+  std::random_device seeder;
+  std::mt19937 engine(seeder());
+  std::uniform_real_distribution<myfloat_t> dist_def(min_defocus, max_defocus);
+  
+  defocus = dist_def(engine);
   phase = defocus * M_PI * 2. * 10000 * elecwavel;
 
-  std::cout << M_PI << std::endl;
+  //############################ CALCULATING RANDOM QUATERNIONS #######################################
+  //Create a uniform distribution from 0 to 1
+  std::uniform_real_distribution<myfloat_t> dist_quat(0, 1);
+  myfloat_t u1, u2, u3;
 
+  //Generate random numbers betwwen 0 and 1
+  u1 = dist_quat(engine); u2 = dist_quat(engine); u3 = dist_quat(engine);
+  quaternions = myvector_t(4, 0);
+
+  //Random quaternion vector, check Shoemake, Graphic Gems III, p. 124-132
+  quaternions[0] = std::sqrt(1 - u1) * sin(2 * M_PI * u2);
+  quaternions[1] = std::sqrt(1 - u1) * cos(2 * M_PI * u2);
+  quaternions[2] = std::sqrt(u1) * sin(2 * M_PI * u3);
+  quaternions[3] = std::sqrt(u1) * cos(2 * M_PI * u3);
+
+  //######################### Preparing FFTWs and allocating memory for images and gradients ##################
   //Prepare FFTs
   prepare_FFTs();
   
@@ -46,17 +70,15 @@ void Grad_cv::read_coord(){
   // ! I'm not going to go into much detail here, because this will be replaced soon.
   // ! It's just for testing
 
-  std::string coord_prefix = "data/input/";
-
-  std::ifstream coord_file, yfile, zfile;
-  coord_file.open(coord_prefix + coords_file);
+  std::ifstream coord_file;
+  coord_file.open(coords_file);
 
   std::cout << "\n +++++++++++++++++++++++++++++++++++++++++ \n";
   std::cout << "\n   READING EM2D COORDINATES            \n\n";
   std::cout << " +++++++++++++++++++++++++++++++++++++++++ \n";
   
   if (!coord_file.good()){
-    myError("Opening file: %s", coord_prefix + coords_file);
+    myError("Opening file: %s", coords_file);
   }
 
   int N; //to store the number of atoms
@@ -84,6 +106,16 @@ void Grad_cv::prepare_FFTs(){
    * 
    */
 
+  std::string wisdom_file;
+
+  wisdom_file = "data/FFTW_wisdom/wisdom" + std::to_string(number_pixels) + ".txt";
+
+  //Check if wisdom file exists and import it if that's the case
+  //The plans only depend on the number of pixels!
+  if (std::filesystem::exists(wisdom_file)) fftwf_import_wisdom_from_filename(wisdom_file.c_str());
+  
+
+  //Create plans for the fftw
   release_FFT_plans();
   mycomplex_t *tmp_map, *tmp_map2;
 
@@ -109,6 +141,10 @@ void Grad_cv::prepare_FFTs(){
 
   myfftw_free(tmp_map);
   myfftw_free(tmp_map2);
+
+  
+  //If the wisdom file doesn't exists, then create a new one
+  if (!std::filesystem::exists(wisdom_file)) fftwf_export_wisdom_to_filename(wisdom_file.c_str());
 
   fft_plans_created = 1;
 }
@@ -147,18 +183,16 @@ void Grad_cv::center_coord(myvector_t &x_a,  myvector_t &y_a,  myvector_t &z_a){
   }
 }
 
-void Grad_cv::quaternion_rotation(myvector_t &q, myvector_t &x_a,  myvector_t &y_a,
-                                  myvector_t &z_a,  myvector_t &x_r, myvector_t &y_r,
-                                  myvector_t &z_r){
+void Grad_cv::quaternion_rotation(myvector_t &q){
 
 /**
  * @brief Rotates a biomolecule using the quaternions rotation matrix
  *        according to (https://en.wikipedia.org/wiki/Rotation_matrix#Quaternion)
  * 
  * @param q vector that stores the parameters for the rotation myvector_t (4)
- * @param x_a original coordinates x
- * @param y_a original coordinates y
- * @param z_a original coordinates z
+ * @param x_coord original coordinates x
+ * @param y_coord original coordinates y
+ * @param z_coord original coordinates z
  * @param x_r stores the rotated values x
  * @param y_r stores the rotated values x
  * @param z_r stores the rotated values x
@@ -169,32 +203,36 @@ void Grad_cv::quaternion_rotation(myvector_t &q, myvector_t &x_a,  myvector_t &y
 
   //Definition of the quaternion rotation matrix 
 
-  myfloat_t q00 = 1 - 2*std::pow(q[2],2) - 2*std::pow(q[3],2);
-  myfloat_t q01 = 2*q[1]*q[2] - 2*q[3]*q[0];
-  myfloat_t q02 = 2*q[1]*q[3] + 2*q[2]*q[0];
+  myfloat_t q00 = 1 - 2*std::pow(q[1],2) - 2*std::pow(q[2],2);
+  myfloat_t q01 = 2*q[0]*q[1] - 2*q[2]*q[3];
+  myfloat_t q02 = 2*q[0]*q[2] + 2*q[1]*q[3];
   myvector_t q0{ q00, q01, q02 };
   
-  myfloat_t q10 = 2*q[1]*q[2] + 2*q[3]*q[0];
-  myfloat_t q11 = 1 - 2*std::pow(q[1],2) - 2*std::pow(q[3],2);
-  myfloat_t q12 = 2*q[2]*q[3] - 2*q[1]*q[0];
+  myfloat_t q10 = 2*q[0]*q[1] + 2*q[2]*q[3];
+  myfloat_t q11 = 1 - 2*std::pow(q[0],2) - 2*std::pow(q[2],2);
+  myfloat_t q12 = 2*q[1]*q[2] - 2*q[0]*q[3];
   myvector_t q1{ q10, q11, q12 };
 
-  myfloat_t q20 = 2*q[1]*q[3] - 2*q[2]*q[0];
-  myfloat_t q21 = 2*q[2]*q[3] + 2*q[1]*q[0];
-  myfloat_t q22 = 1 - 2*std::pow(q[1],2) - 2*std::pow(q[2],2);
+  myfloat_t q20 = 2*q[0]*q[2] - 2*q[1]*q[3];
+  myfloat_t q21 = 2*q[1]*q[2] + 2*q[0]*q[3];
+  myfloat_t q22 = 1 - 2*std::pow(q[0],2) - 2*std::pow(q[1],2);
   myvector_t q2{ q20, q21, q22};
 
   mymatrix_t Q{ q0, q1, q2 };
   
-  int n = x_a.size();
-  
+  int n = x_coord.size();
+  myvector_t x_r(n, 0); myvector_t z_r(n, 0); myvector_t y_r(n, 0);
+
   for (unsigned int i=0; i<n; i++){
 
-    x_r[i] = x_a[i]*Q[0][0] + y_a[i]*Q[0][1] + z_a[i]*Q[0][2];
-    y_r[i] = x_a[i]*Q[1][0] + y_a[i]*Q[1][1] + z_a[i]*Q[1][2];
-    z_r[i] = x_a[i]*Q[2][0] + y_a[i]*Q[2][1] + z_a[i]*Q[2][2];
-
+    x_r[i] = x_coord[i]*Q[0][0] + y_coord[i]*Q[0][1] + z_coord[i]*Q[0][2];
+    y_r[i] = x_coord[i]*Q[1][0] + y_coord[i]*Q[1][1] + z_coord[i]*Q[1][2];
+    z_r[i] = x_coord[i]*Q[2][0] + y_coord[i]*Q[2][1] + z_coord[i]*Q[2][2];
   }
+
+  x_coord = x_r;
+  y_coord = y_r;
+  z_coord = z_r;
 }
 
 void Grad_cv::I_calculated(){
@@ -202,9 +240,9 @@ void Grad_cv::I_calculated(){
   /**
    * @brief Calculates the image from the 3D model by representing the atoms as gaussians and using a 2d Grid
    * 
-   * @param x_a original coordinates x
-   * @param y_a original coordinates y
-   * @param z_a original coordinates z
+   * @param x_coord original coordinates x
+   * @param y_coord original coordinates y
+   * @param z_coord original coordinates z
    * @param sigma standard deviation for the gaussians, equal for all the atoms  (myfloat_t)
    * @paramsigma_reachnumber of sigmas used for cutoff (int)
    * @param number_pixels Resolution of the calculated image
@@ -217,8 +255,8 @@ void Grad_cv::I_calculated(){
    */
 
   //Calculate minimum and maximum values for the linspace-like vectors x and y
-  auto min = -pixel_size * (number_pixels + 1)*0.5;
-  auto max = pixel_size * (number_pixels - 3)*0.5 + pixel_size;
+  myfloat_t min = -pixel_size * (number_pixels + 1)*0.5;
+  myfloat_t max = pixel_size * (number_pixels - 3)*0.5 + pixel_size;
 
   //Assign memory space required to fill the vectors
   x.resize(number_pixels); y.resize(number_pixels);
@@ -378,6 +416,29 @@ void Grad_cv::conv_proj_ctf(){
 
 }
 
+myfloat_t Grad_cv::calc_I_variance(){
+
+  myfloat_t mu=0, var=0;
+
+  myfloat_t rad_sq = pixel_size * (number_pixels + 1) * 0.25;
+  rad_sq = rad_sq * rad_sq;
+
+  std::vector <int> ins_circle;
+  where(x, y, ins_circle, rad_sq);
+  int N = ins_circle.size()/2; //Number of indexes
+
+  //Calculate the mean
+  for (int i=0; i<N; i++) mu += Icalc[ins_circle[i]][ins_circle[i+1]];
+  mu /= ins_circle.size();
+
+  //Calculate the variance
+  for (int i=0; i<N; i++) var += (Icalc[ins_circle[i]][ins_circle[i+1]] - mu) *
+                                 (Icalc[ins_circle[i]][ins_circle[i+1]] - mu);
+  var /= ins_circle.size();
+
+  return var;
+}
+
 void Grad_cv::I_with_noise(mymatrix_t &I_i, mymatrix_t &I_f, myfloat_t std=0.1){
 
   /**
@@ -443,7 +504,7 @@ myfloat_t Grad_cv::collective_variable(){
   return -s; // / (Icalc_sum * Iexp_sum);
 }
 
-void Grad_cv::gradient(myvector_t &r, myvector_t &r_a, myvector_t &sgrad){
+void Grad_cv::gradient(myvector_t &r, myvector_t &r_a, myvector_t &sgrad, const char *R){
 
   /**
    * @brief Calculates the gradient of the colective variable (s) for image w along r_a 
@@ -470,7 +531,9 @@ void Grad_cv::gradient(myvector_t &r, myvector_t &r_a, myvector_t &sgrad){
   mymatrix_t Iexp_T(number_pixels, myvector_t (number_pixels, 0));
 
   transpose(Iexp, Iexp_T);
-  matmul(Icalc, Iexp_T, Sxy);
+  
+  if (R = "x") matmul(Icalc, Iexp_T, Sxy);
+  if (R = "y") matmul(Iexp_T, Icalc, Sxy);
 
   for (int i=0; i<sgrad.size(); i++){
     for (int j=0; j<r.size(); j++){
@@ -483,33 +546,27 @@ void Grad_cv::gradient(myvector_t &r, myvector_t &r_a, myvector_t &sgrad){
 
 void Grad_cv::run(){
 
+
+  //Rotate the coordinates
+  quaternion_rotation(quaternions);
+
   std::cout << "\n Performing image projection ..." << std::endl;
   I_calculated();
   std::cout << "... done" << std::endl;
 
-  print_image(Icalc, "data/output/Inoctf.txt");
-  std::cout << "\n The calculated image (without ctf) was saved in data/output/Inoctf.txt" << std::endl;
-  
+    
   //The convoluted image was written in Iexp because we need two images to test the cv and the gradient
   std::cout << "\n Applying CTF to calcualted image ..." << std::endl;
   conv_proj_ctf();
   std::cout << "... done" << std::endl;
 
-  //Add gaussian noise with sigma = 8 and save it in Iexp
-  I_with_noise(Icalc, Iexp, 8);
+  myfloat_t Icalc_var = calc_I_variance();
 
-  print_image(Iexp, "data/output/Ictf_noise.txt");
-  std::cout << "\n The calculated image (with ctf) was saved in data/output/Ictf_noise.txt" << std::endl;
+  //Add gaussian noise with std equal to the intensity variance of the image times the SNR
+  //I_with_noise(Icalc, Iexp, Icalc_var * SNR);
 
-  //Calculate the collective variable, this uses Icalc and Iexp
-  s_cv = collective_variable();
-
-  gradient(x, x_coord, grad_x);
-  gradient(y, y_coord, grad_y);
-  //grad_z is already initialized with zeros
-
-  results_to_json(s_cv, grad_x, grad_y, grad_z);
-  std::cout << "\n The cv and its gradient were saved in data/output/grad.json" << std::endl;
+  print_image(Icalc, image_file);
+  std::cout << "\n The calculated image (with ctf) was saved in " << image_file << std::endl;
 }
 
 // Utilities
@@ -543,6 +600,31 @@ void Grad_cv::where(myvector_t &inp_vec, std::vector<size_t> &out_vec,
     }
 }
 
+void Grad_cv::where(myvector_t &x_vec, myvector_t &y_vec,
+                    std::vector<int> &out_vec, myfloat_t radius){                       
+    /**
+     * @brief Finds the indexes of the elements of a vector (x) that satisfy |x - x_res| <= limit
+     * 
+     * @param inp_vec vector of the elements to be evalutated
+     * @param out_vec vector to store the indices
+     * @param x_res value used to evaluate the condition (| x - x_res|)
+     * @param limit value used to compare the condition ( <= limit)
+     * 
+     * @return void
+     */
+
+    for (int i=0; i<number_pixels; i++){
+      for (int j=0; j<number_pixels; j++){
+
+        if ( x_vec[i]*x_vec[i] + y_vec[j]*y_vec[j] <= radius){
+
+          out_vec.push_back(i);
+          out_vec.push_back(j);
+      }
+    }
+  }
+}
+
 void Grad_cv::arange(myvector_t &out_vec, myfloat_t xo, myfloat_t xf, myfloat_t dx){
 
     /**
@@ -561,6 +643,8 @@ void Grad_cv::arange(myvector_t &out_vec, myfloat_t xo, myfloat_t xf, myfloat_t 
     //fills a vector with values separated by a_x starting from xo [xo, xo + a, xo + 2a, ...]
     std::generate(out_vec.begin(), out_vec.end(), [n=0, &xo, &a_x]() mutable { return n++ * a_x + xo; });   
 }
+
+
 
 void Grad_cv::transpose(mymatrix_t &A, mymatrix_t &A_T){
 
@@ -611,6 +695,13 @@ void Grad_cv::print_image(mymatrix_t &Im, std::string fname){
 
   std::cout.precision(3);
 
+  matrix_file << std::scientific << std::showpos << defocus << " \n";
+
+  for (int i=0; i<4; i++){
+
+    matrix_file << std::scientific << std::showpos << quaternions[i] << " \n";
+  }
+
   for (int i=0; i<number_pixels; i++){
     for (int j=0; j<number_pixels; j++){
 
@@ -641,29 +732,30 @@ int Grad_cv::read_parameters(const char *fileinput){
     strcpy(saveline, line);
     char *token = strtok(line, " ");
 
-    if (token == NULL || line[0] == '#' || strlen(token) == 0)
-    {
+    if (token == NULL || line[0] == '#' || strlen(token) == 0){
       // comment or blank line
     }
-    else if (strcmp(token, "PIXEL_SIZE") == 0)
-    {
+
+    else if (strcmp(token, "PIXEL_SIZE") == 0){
       token = strtok(NULL, " ");
       pixel_size = atof(token);
-      if (pixel_size < 0)
-      {
-        myError("Negative pixel size");
-      }
+      
+      if (pixel_size < 0) myError("Negative pixel size");
       std::cout << "Pixel Size " << pixel_size << "\n";
+
       yesPixSi = true;
     }
-    else if (strcmp(token, "NUMBER_PIXELS") == 0)
-    {
+
+    else if (strcmp(token, "NUMBER_PIXELS") == 0){
+      
       token = strtok(NULL, " ");
       number_pixels = int(atoi(token));
-      if (number_pixels < 0)
-      {
+
+      if (number_pixels < 0){
+
         myError("Negative Number of Pixels");
       }
+
       std::cout << "Number of Pixels " << number_pixels << "\n";
       yesNumPix = true;
     }
@@ -679,17 +771,21 @@ int Grad_cv::read_parameters(const char *fileinput){
       std::cout << "B Env. " << b_factor << "\n";
       yesBFact = true;
     }
+
     else if (strcmp(token, "CTF_DEFOCUS") == 0)
     {
       token = strtok(NULL, " ");
-      defocus = atof(token);
-      if (defocus < 0)
-      {
-        myError("Negative defocus");
-      }
-      std::cout << "Defocus " << defocus << "\n";
+      min_defocus = atof(token);
+      if (min_defocus < 0) myError("Negative min defocus");
+
+      token = strtok(NULL, " ");
+      max_defocus = atof(token);
+      if (max_defocus < 0) myError("Negative max defocus");
+
+      std::cout << "Defocus " << min_defocus << " " << max_defocus << "\n";
       yesDefocus = true;
     }
+
     else if (strcmp(token, "CTF_AMPLITUDE") == 0)
     {
       token = strtok(NULL, " ");
@@ -697,6 +793,7 @@ int Grad_cv::read_parameters(const char *fileinput){
       if (CTF_amp < 0){
         myError("Negative amplitude");
       }
+
       std::cout << "CTF Amp. " << CTF_amp << "\n";
       yesAMP = true;
     }
