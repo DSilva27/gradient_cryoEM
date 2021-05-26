@@ -56,6 +56,9 @@ class Grad_cv {
   int number_pixels, number_pixels_fft_1d, sigma_reach;
   myfloat_t pixel_size, sigma_cv;
   myfloat_t b_factor, min_defocus, max_defocus, CTF_amp, phase;
+  myfloat_t defocus;
+
+  myvector_t quaternions;
 
   //***************** Control for parameters
   bool yesPixSi = false;
@@ -111,9 +114,7 @@ public:
 
   void read_coord();
   void center_coord(myvector_t &, myvector_t &, myvector_t &);
-  void quaternion_rotation(myvector_t &, myvector_t &, myvector_t &, 
-                           myvector_t &, myvector_t &, myvector_t &, 
-                           myvector_t &);
+  void quaternion_rotation(myvector_t &);
 
   void I_calculated();
   void calc_ctf(mycomplex_t*);

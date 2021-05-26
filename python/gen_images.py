@@ -72,6 +72,7 @@ def aligment_rotation_matrix(reference, system):
 parser = argparse.ArgumentParser()
 
 parser.add_argument("--n_proc", help="number of processors used. Default=1", default=1, type=int)
+parser.add_argument("--n_img", help="number of images to be created", required=True, type=int)
 parser.add_argument("--ref_pdb", help="name of the input pdb (do not include path)", required=True)
 parser.add_argument("--system_pdb", 
                     help="name of the system pdb in the current md_step pdb (do not include path)", 
@@ -101,8 +102,8 @@ system_atoms -= system_universe.atoms.center_of_mass()
 system_atoms_aligned = np.dot(rot_matrix, system_atoms.T)
 
 # Save the coordinates
-if os.path.exists("data/input/coord.txt"):
-    os.system("rm ../data/input/coord.txt")
+#if os.path.exists("data/input/coord.txt"):
+    #os.system("rm ../data/input/coord.txt")
 
 with open("data/input/coord.txt", "a") as f:
     f.write("{cols}\n".format(cols=system_atoms_aligned.shape[1]))
@@ -111,11 +112,11 @@ with open("data/input/coord.txt", "a") as f:
 ### RUNNING C++
 
 # Let's start with just three images
-indexes = np.array(range(0, 3))
+indexes = np.array(range(0, args.n_img))
 
 def gen_img(index):
 
-    os.system(f"./gradcv.out {index}")
+    os.system(f"./gradcv.out {index} > /dev/null 2>&1")
     return 1
 
 p = Pool(args.n_proc)

@@ -12,6 +12,7 @@ Grad_cv::Grad_cv(std::string pf, std::string cf, std::string imf){
 
 void Grad_cv::init_variables(){
 
+  //############################### Read parameters and coordinates ###################################
   read_coord();
   read_parameters(params_file.c_str());
 
@@ -20,10 +21,27 @@ void Grad_cv::init_variables(){
   //Generate random defocus and calculate the phase
   std::random_device seeder;
   std::mt19937 engine(seeder());
-  std::uniform_real_distribution<> dist(min_defocus, max_defocus);
+  std::uniform_real_distribution<myfloat_t> dist_def(min_defocus, max_defocus);
   
-  phase = dist(engine) * M_PI * 2. * 10000 * elecwavel;
+  defocus = dist_def(engine);
+  phase = defocus * M_PI * 2. * 10000 * elecwavel;
 
+  //############################ CALCULATING RANDOM QUATERNIONS #######################################
+  //Create a uniform distribution from 0 to 1
+  std::uniform_real_distribution<myfloat_t> dist_quat(0, 1);
+  myfloat_t u1, u2, u3;
+
+  //Generate random numbers betwwen 0 and 1
+  u1 = dist_quat(engine); u2 = dist_quat(engine); u3 = dist_quat(engine);
+  quaternions = myvector_t(4, 0);
+
+  //Random quaternion vector, check Shoemake, Graphic Gems III, p. 124-132
+  quaternions[0] = std::sqrt(1 - u1) * sin(2 * M_PI * u2);
+  quaternions[1] = std::sqrt(1 - u1) * cos(2 * M_PI * u2);
+  quaternions[2] = std::sqrt(u1) * sin(2 * M_PI * u3);
+  quaternions[3] = std::sqrt(u1) * cos(2 * M_PI * u3);
+
+  //######################### Preparing FFTWs and allocating memory for images and gradients ##################
   //Prepare FFTs
   prepare_FFTs();
   
@@ -165,18 +183,16 @@ void Grad_cv::center_coord(myvector_t &x_a,  myvector_t &y_a,  myvector_t &z_a){
   }
 }
 
-void Grad_cv::quaternion_rotation(myvector_t &q, myvector_t &x_a,  myvector_t &y_a,
-                                  myvector_t &z_a,  myvector_t &x_r, myvector_t &y_r,
-                                  myvector_t &z_r){
+void Grad_cv::quaternion_rotation(myvector_t &q){
 
 /**
  * @brief Rotates a biomolecule using the quaternions rotation matrix
  *        according to (https://en.wikipedia.org/wiki/Rotation_matrix#Quaternion)
  * 
  * @param q vector that stores the parameters for the rotation myvector_t (4)
- * @param x_a original coordinates x
- * @param y_a original coordinates y
- * @param z_a original coordinates z
+ * @param x_coord original coordinates x
+ * @param y_coord original coordinates y
+ * @param z_coord original coordinates z
  * @param x_r stores the rotated values x
  * @param y_r stores the rotated values x
  * @param z_r stores the rotated values x
@@ -187,32 +203,36 @@ void Grad_cv::quaternion_rotation(myvector_t &q, myvector_t &x_a,  myvector_t &y
 
   //Definition of the quaternion rotation matrix 
 
-  myfloat_t q00 = 1 - 2*std::pow(q[2],2) - 2*std::pow(q[3],2);
-  myfloat_t q01 = 2*q[1]*q[2] - 2*q[3]*q[0];
-  myfloat_t q02 = 2*q[1]*q[3] + 2*q[2]*q[0];
+  myfloat_t q00 = 1 - 2*std::pow(q[1],2) - 2*std::pow(q[2],2);
+  myfloat_t q01 = 2*q[0]*q[1] - 2*q[2]*q[3];
+  myfloat_t q02 = 2*q[0]*q[2] + 2*q[1]*q[3];
   myvector_t q0{ q00, q01, q02 };
   
-  myfloat_t q10 = 2*q[1]*q[2] + 2*q[3]*q[0];
-  myfloat_t q11 = 1 - 2*std::pow(q[1],2) - 2*std::pow(q[3],2);
-  myfloat_t q12 = 2*q[2]*q[3] - 2*q[1]*q[0];
+  myfloat_t q10 = 2*q[0]*q[1] + 2*q[2]*q[3];
+  myfloat_t q11 = 1 - 2*std::pow(q[0],2) - 2*std::pow(q[2],2);
+  myfloat_t q12 = 2*q[1]*q[2] - 2*q[0]*q[3];
   myvector_t q1{ q10, q11, q12 };
 
-  myfloat_t q20 = 2*q[1]*q[3] - 2*q[2]*q[0];
-  myfloat_t q21 = 2*q[2]*q[3] + 2*q[1]*q[0];
-  myfloat_t q22 = 1 - 2*std::pow(q[1],2) - 2*std::pow(q[2],2);
+  myfloat_t q20 = 2*q[0]*q[2] - 2*q[1]*q[3];
+  myfloat_t q21 = 2*q[1]*q[2] + 2*q[0]*q[3];
+  myfloat_t q22 = 1 - 2*std::pow(q[0],2) - 2*std::pow(q[1],2);
   myvector_t q2{ q20, q21, q22};
 
   mymatrix_t Q{ q0, q1, q2 };
   
-  int n = x_a.size();
-  
+  int n = x_coord.size();
+  myvector_t x_r(n, 0); myvector_t z_r(n, 0); myvector_t y_r(n, 0);
+
   for (unsigned int i=0; i<n; i++){
 
-    x_r[i] = x_a[i]*Q[0][0] + y_a[i]*Q[0][1] + z_a[i]*Q[0][2];
-    y_r[i] = x_a[i]*Q[1][0] + y_a[i]*Q[1][1] + z_a[i]*Q[1][2];
-    z_r[i] = x_a[i]*Q[2][0] + y_a[i]*Q[2][1] + z_a[i]*Q[2][2];
-
+    x_r[i] = x_coord[i]*Q[0][0] + y_coord[i]*Q[0][1] + z_coord[i]*Q[0][2];
+    y_r[i] = x_coord[i]*Q[1][0] + y_coord[i]*Q[1][1] + z_coord[i]*Q[1][2];
+    z_r[i] = x_coord[i]*Q[2][0] + y_coord[i]*Q[2][1] + z_coord[i]*Q[2][2];
   }
+
+  x_coord = x_r;
+  y_coord = y_r;
+  z_coord = z_r;
 }
 
 void Grad_cv::I_calculated(){
@@ -220,9 +240,9 @@ void Grad_cv::I_calculated(){
   /**
    * @brief Calculates the image from the 3D model by representing the atoms as gaussians and using a 2d Grid
    * 
-   * @param x_a original coordinates x
-   * @param y_a original coordinates y
-   * @param z_a original coordinates z
+   * @param x_coord original coordinates x
+   * @param y_coord original coordinates y
+   * @param z_coord original coordinates z
    * @param sigma standard deviation for the gaussians, equal for all the atoms  (myfloat_t)
    * @paramsigma_reachnumber of sigmas used for cutoff (int)
    * @param number_pixels Resolution of the calculated image
@@ -398,7 +418,7 @@ void Grad_cv::conv_proj_ctf(){
 
 myfloat_t Grad_cv::calc_I_variance(){
 
-  myfloat_t mu, var;
+  myfloat_t mu=0, var=0;
 
   myfloat_t rad_sq = pixel_size * (number_pixels + 1) * 0.25;
   rad_sq = rad_sq * rad_sq;
@@ -412,7 +432,8 @@ myfloat_t Grad_cv::calc_I_variance(){
   mu /= ins_circle.size();
 
   //Calculate the variance
-  for (int i=0; i<N; i++) var += (Icalc[ins_circle[i]][ins_circle[i+1]] - mu);
+  for (int i=0; i<N; i++) var += (Icalc[ins_circle[i]][ins_circle[i+1]] - mu) *
+                                 (Icalc[ins_circle[i]][ins_circle[i+1]] - mu);
   var /= ins_circle.size();
 
   return var;
@@ -525,6 +546,10 @@ void Grad_cv::gradient(myvector_t &r, myvector_t &r_a, myvector_t &sgrad, const 
 
 void Grad_cv::run(){
 
+
+  //Rotate the coordinates
+  quaternion_rotation(quaternions);
+
   std::cout << "\n Performing image projection ..." << std::endl;
   I_calculated();
   std::cout << "... done" << std::endl;
@@ -538,9 +563,9 @@ void Grad_cv::run(){
   myfloat_t Icalc_var = calc_I_variance();
 
   //Add gaussian noise with std equal to the intensity variance of the image times the SNR
-  I_with_noise(Icalc, Iexp, Icalc_var * SNR);
+  //I_with_noise(Icalc, Iexp, Icalc_var * SNR);
 
-  print_image(Iexp, image_file);
+  print_image(Icalc, image_file);
   std::cout << "\n The calculated image (with ctf) was saved in " << image_file << std::endl;
 }
 
@@ -669,6 +694,13 @@ void Grad_cv::print_image(mymatrix_t &Im, std::string fname){
   matrix_file.open (fname);
 
   std::cout.precision(3);
+
+  matrix_file << std::scientific << std::showpos << defocus << " \n";
+
+  for (int i=0; i<4; i++){
+
+    matrix_file << std::scientific << std::showpos << quaternions[i] << " \n";
+  }
 
   for (int i=0; i<number_pixels; i++){
     for (int j=0; j<number_pixels; j++){
