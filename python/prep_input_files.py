@@ -1,12 +1,8 @@
-import numpy as np
-
 '''
-This .py is used to create the parameters used, which will be in the parameters.txt file and
-in the quaternions.txt file.
+This .py is used to create the parameters used, which will be in the parameters.txt file.
 
 Here you can create the files with the parameters you'd like.
 '''
-
 
 #Create the parameters file
 '''
@@ -18,8 +14,6 @@ Grid Parameters
 
 CTF parameters
 * CTF_ENV: b parameter for the envelope function defined as env(s) = exp(- b * s^2 / 2)
-* CTF_DEFOCUS: the synthetic image will have a random defocus, this parameters defines the lower and
-               upper limits for said random defocus.
 * CTF_AMPLITUDE: 
 
 Modeling with gaussians parameters
@@ -34,8 +28,6 @@ number_pixels = 124
 pixel_size = 1.77
 
 ctf_env = 1.0
-ctf_defocus_min = 1.0
-ctf_defocus_max = 3.0
 ctf_amplitude = 0.1
 
 sigma = 1
@@ -48,7 +40,6 @@ params_file.write(f"""NUMBER_PIXELS {number_pixels}
 PIXEL_SIZE {pixel_size}
 
 CTF_ENV {ctf_env}
-CTF_DEFOCUS {ctf_defocus_min} {ctf_defocus_max}
 CTF_AMPLITUDE {ctf_amplitude}
 
 SIGMA {sigma}
@@ -56,21 +47,3 @@ SIGMA_REACH {sigma_reach}
 """)
 params_file.close()
 
-#Create quaternions file
-
-'''
-A quaternion vector is defined as:
-
-q = w + xi + yj + zk
-
-However, when we create a quaternion rotation matrix we read the scalar value last!
-'''
-
-w = 0
-x = 0
-y = 1/np.sqrt(2)
-z = 1/np.sqrt(2)
-
-quat_file = open("data/input/quaternions.txt", "w")
-quat_file.write(f"{x} {y} {z} {w}")
-quat_file.close()

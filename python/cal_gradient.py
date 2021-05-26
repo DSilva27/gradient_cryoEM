@@ -72,7 +72,7 @@ def aligment_rotation_matrix(reference, system):
 parser = argparse.ArgumentParser()
 
 parser.add_argument("--n_proc", help="number of processors used. Default=1", default=1, type=int)
-parser.add_argument("--n_img", help="number of images to be created", required=True, type=int)
+parser.add_argument("--n_img", help="number of images to be compared", required=True, type=int)
 parser.add_argument("--ref_pdb", help="name of the input pdb (do not include path)", required=True)
 parser.add_argument("--system_pdb", 
                     help="name of the system pdb in the current md_step pdb (do not include path)", 

@@ -1,45 +1,22 @@
 #include "gradcv.h"
 
 
-Grad_cv::Grad_cv(std::string pf, std::string cf, std::string imf){
+Grad_cv::Grad_cv(std::string pf, std::string cf, std::string imf, std::string gradf){
     
   params_file = "data/input/" + pf;
   coords_file = "data/input/" + cf;
   image_file = "data/images/" + imf;
+  image_file = "data/output/" + graf;
 }
 
 //Grad_cv::~Grad_cv(){}
 
 void Grad_cv::init_variables(){
 
-  //############################### Read parameters and coordinates ###################################
+  //############################### Read parameters and coordinates #####################################
   read_coord();
   read_parameters(params_file.c_str());
-
   number_pixels_fft_1d = number_pixels/2 + 1;
-
-  //Generate random defocus and calculate the phase
-  std::random_device seeder;
-  std::mt19937 engine(seeder());
-  std::uniform_real_distribution<myfloat_t> dist_def(min_defocus, max_defocus);
-  
-  defocus = dist_def(engine);
-  phase = defocus * M_PI * 2. * 10000 * elecwavel;
-
-  //############################ CALCULATING RANDOM QUATERNIONS #######################################
-  //Create a uniform distribution from 0 to 1
-  std::uniform_real_distribution<myfloat_t> dist_quat(0, 1);
-  myfloat_t u1, u2, u3;
-
-  //Generate random numbers betwwen 0 and 1
-  u1 = dist_quat(engine); u2 = dist_quat(engine); u3 = dist_quat(engine);
-  quaternions = myvector_t(4, 0);
-
-  //Random quaternion vector, check Shoemake, Graphic Gems III, p. 124-132
-  quaternions[0] = std::sqrt(1 - u1) * sin(2 * M_PI * u2);
-  quaternions[1] = std::sqrt(1 - u1) * cos(2 * M_PI * u2);
-  quaternions[2] = std::sqrt(u1) * sin(2 * M_PI * u3);
-  quaternions[3] = std::sqrt(u1) * cos(2 * M_PI * u3);
 
   //######################### Preparing FFTWs and allocating memory for images and gradients ##################
   //Prepare FFTs
@@ -49,10 +26,16 @@ void Grad_cv::init_variables(){
   Icalc = mymatrix_t(number_pixels, myvector_t(number_pixels, 0));
   Iexp = Icalc;
 
+  
   //Turn grad_* into a number_pixels vector and fill it with zeros
   grad_x = myvector_t(number_pixels, 0);
   grad_y = myvector_t(number_pixels, 0);
   grad_z = myvector_t(number_pixels, 0);
+
+
+  //#################### Read experimental image (includes defocus and quaternions) ###########################
+  read_exp_img(image_file);
+  phase = defocus * M_PI * 2. * 10000 * elecwavel;
 }
 
 void Grad_cv::read_coord(){
@@ -439,13 +422,12 @@ myfloat_t Grad_cv::calc_I_variance(){
   return var;
 }
 
-void Grad_cv::I_with_noise(mymatrix_t &I_i, mymatrix_t &I_f, myfloat_t std=0.1){
+void Grad_cv::I_with_noise(mymatrix_t &I, myfloat_t std=0.1){
 
   /**
    * @brief Blurs an image using gaussian noise
    * 
-   * @param I_i reference image (matrix)
-   * @param I_f reference image + noise (matrix)
+   * @param I image to which the noise will be applied
    * 
    */
 
@@ -458,7 +440,7 @@ void Grad_cv::I_with_noise(mymatrix_t &I_i, mymatrix_t &I_f, myfloat_t std=0.1){
   for (int i=0; i<number_pixels; i++){
     for (int j=0; j<number_pixels; j++){
 
-      I_f[i][j] = I_i[i][j] + dist(generator);
+      I[i][j] += dist(generator);
     }
   }
 }
@@ -563,10 +545,17 @@ void Grad_cv::run(){
   myfloat_t Icalc_var = calc_I_variance();
 
   //Add gaussian noise with std equal to the intensity variance of the image times the SNR
-  //I_with_noise(Icalc, Iexp, Icalc_var * SNR);
+  I_with_noise(Icalc, Icalc_var * SNR);  
+  
+  std::cout << "\n Calculating CV and its gradient..." << std::endl;
 
-  print_image(Icalc, image_file);
-  std::cout << "\n The calculated image (with ctf) was saved in " << image_file << std::endl;
+  s_cv = collective_variable();
+  gradient(x, x_coord, grad_x, "x");
+  gradient(y, y_coord, grad_y, "y");
+  //grad_z is already initialized with zeros
+
+  results_to_json(s_cv, grad_x, grad_y, grad_z);
+  std::cout <<"\n ...done" << std::endl;
 }
 
 // Utilities
@@ -712,6 +701,30 @@ void Grad_cv::print_image(mymatrix_t &Im, std::string fname){
   matrix_file.close();
 }
 
+void Grad_cv::read_exp_img(std::string fname){
+
+  std::ifstream file;
+  file.open(fname);
+
+  if (!file.good()){
+    myError("Opening file: %s", fname);
+  }
+
+  //Read defocus
+  file >> defocus;
+
+  //Read quaternions
+  for (int i=0; i<4; i++) file >> quaternions[i];
+
+  //Read image
+  for (int i=0; i<number_pixels; i++){
+    for (int j=0; j<number_pixels; j++){
+
+      file >> Iexp[i][j];
+    }
+  }
+}
+
 int Grad_cv::read_parameters(const char *fileinput){ 
 
   std::ifstream input(fileinput);
@@ -770,20 +783,6 @@ int Grad_cv::read_parameters(const char *fileinput){
       }
       std::cout << "B Env. " << b_factor << "\n";
       yesBFact = true;
-    }
-
-    else if (strcmp(token, "CTF_DEFOCUS") == 0)
-    {
-      token = strtok(NULL, " ");
-      min_defocus = atof(token);
-      if (min_defocus < 0) myError("Negative min defocus");
-
-      token = strtok(NULL, " ");
-      max_defocus = atof(token);
-      if (max_defocus < 0) myError("Negative max defocus");
-
-      std::cout << "Defocus " << min_defocus << " " << max_defocus << "\n";
-      yesDefocus = true;
     }
 
     else if (strcmp(token, "CTF_AMPLITUDE") == 0)
@@ -846,9 +845,6 @@ int Grad_cv::read_parameters(const char *fileinput){
   }
   if (not(yesAMP)){
     myError("Input missing: please provide CTF_AMPLITUD");
-  }
-  if (not(yesDefocus)){
-    myError("Input missing: please provide DEFOCUS");
   }
   if (not(yesSigmaCV)){
     myError("Input missing: please provide SIGMA");
@@ -959,7 +955,7 @@ void Grad_cv::results_to_json(myfloat_t s, myvector_t &sgrad_x, myvector_t &sgra
 
   std::ofstream gradfile;
 
-  gradfile.open("data/output/grad.json");
+  gradfile.open(json_file);
 
   //begin json file
   gradfile << "[" << std::endl;

@@ -55,8 +55,7 @@ class Grad_cv {
   //***************** Declare variables
   int number_pixels, number_pixels_fft_1d, sigma_reach;
   myfloat_t pixel_size, sigma_cv;
-  myfloat_t b_factor, min_defocus, max_defocus, CTF_amp, phase;
-  myfloat_t defocus;
+  myfloat_t b_factor, defocus, CTF_amp, phase;
 
   myvector_t quaternions;
 
@@ -64,7 +63,6 @@ class Grad_cv {
   bool yesPixSi = false;
   bool yesNumPix = false;
   bool yesBFact = false;
-  bool yesDefocus = false;
   bool yesAMP = false;
   bool yesSigmaCV = false;
   bool yesSigmaReach = false;
@@ -77,6 +75,7 @@ class Grad_cv {
   std::string params_file;
   std::string coords_file;
   std::string image_file;
+  std::string json_file;
   
 
   //coordinates 
@@ -106,7 +105,7 @@ class Grad_cv {
 
 public:
 
-  Grad_cv(std::string, std::string, std::string);
+  Grad_cv(std::string, std::string, std::string, std::string);
   //~Grad_cv();
 
   void init_variables();
@@ -120,7 +119,7 @@ public:
   void calc_ctf(mycomplex_t*);
   void conv_proj_ctf();
   
-  void I_with_noise(mymatrix_t &, mymatrix_t &, myfloat_t);
+  void I_with_noise(mymatrix_t &, myfloat_t);
   myfloat_t calc_I_variance();
   myfloat_t collective_variable();
   void gradient(myvector_t &, myvector_t &, myvector_t &, const char *);
