@@ -6,7 +6,7 @@ Grad_cv::Grad_cv(std::string pf, std::string cf, std::string imf, std::string gr
   params_file = "data/input/" + pf;
   coords_file = "data/input/" + cf;
   image_file = "data/images/" + imf;
-  image_file = "data/output/" + graf;
+  json_file = "data/output/" + gradf;
 }
 
 //Grad_cv::~Grad_cv(){}
@@ -17,6 +17,7 @@ void Grad_cv::init_variables(){
   read_coord();
   read_parameters(params_file.c_str());
   number_pixels_fft_1d = number_pixels/2 + 1;
+  n_atoms = x_coord.size();
 
   //######################### Preparing FFTWs and allocating memory for images and gradients ##################
   //Prepare FFTs
@@ -28,14 +29,15 @@ void Grad_cv::init_variables(){
 
   
   //Turn grad_* into a number_pixels vector and fill it with zeros
-  grad_x = myvector_t(number_pixels, 0);
-  grad_y = myvector_t(number_pixels, 0);
-  grad_z = myvector_t(number_pixels, 0);
+  grad_x = myvector_t(n_atoms, 0);
+  grad_y = myvector_t(n_atoms, 0);
+  grad_z = myvector_t(n_atoms, 0);
 
-
+  std::cout << "Variables initialized" << std::endl;
   //#################### Read experimental image (includes defocus and quaternions) ###########################
   read_exp_img(image_file);
   phase = defocus * M_PI * 2. * 10000 * elecwavel;
+
 }
 
 void Grad_cv::read_coord(){
@@ -80,7 +82,7 @@ void Grad_cv::read_coord(){
 
 
 
-std::cout << "Number of atoms: " << x_coord.size() << std::endl;
+std::cout << "Number of atoms: " << n_atoms << std::endl;
 }
 
 void Grad_cv::prepare_FFTs(){
@@ -202,11 +204,10 @@ void Grad_cv::quaternion_rotation(myvector_t &q){
   myvector_t q2{ q20, q21, q22};
 
   mymatrix_t Q{ q0, q1, q2 };
-  
-  int n = x_coord.size();
-  myvector_t x_r(n, 0); myvector_t z_r(n, 0); myvector_t y_r(n, 0);
 
-  for (unsigned int i=0; i<n; i++){
+  myvector_t x_r(n_atoms, 0); myvector_t z_r(n_atoms, 0); myvector_t y_r(n_atoms, 0);
+
+  for (unsigned int i=0; i<n_atoms; i++){
 
     x_r[i] = x_coord[i]*Q[0][0] + y_coord[i]*Q[0][1] + z_coord[i]*Q[0][2];
     y_r[i] = x_coord[i]*Q[1][0] + y_coord[i]*Q[1][1] + z_coord[i]*Q[1][2];
@@ -256,7 +257,7 @@ void Grad_cv::I_calculated(){
   myvector_t g_x(number_pixels, 0.0);
   myvector_t g_y(number_pixels, 0.0);
 
-  for (int atom=0; atom<x_coord.size(); atom++){
+  for (int atom=0; atom<n_atoms; atom++){
 
     //calculates the indices that satisfy |x - x_atom| <= sigma_reach*sigma
     where(x, x_sel, x_coord[atom], sigma_reach * sigma_cv);
@@ -273,27 +274,30 @@ void Grad_cv::I_calculated(){
       g_y[y_sel[i]] = std::exp( -0.5 * (std::pow( (y[y_sel[i]] - y_coord[atom])/sigma_cv, 2 )) );
     }
 
-    //Calculate the image
-    for (int i=0; i<Icalc.size(); i++){ 
-      for (int j=0; j<Icalc[0].size(); j++){ 
+    //Calculate the image and the gradient
+    for (int i=0; i<number_pixels; i++){ 
+      for (int j=0; j<number_pixels; j++){ 
         
-        Icalc[i][j] += g_x[i] * g_y[j];     
+        Icalc[i][j] += g_x[i] * g_y[j];
+        grad_x[atom] += (x[i] - x_coord[atom]) * g_x[i] * g_y[j] * Iexp[i][j];
+        grad_y[atom] += (y[j] - y_coord[atom]) * g_x[i] * g_y[j] * Iexp[i][j];
       }
     }
+
+    grad_x[atom] *= -sqrt_2pi / sigma_cv;
+    grad_y[atom] *= -sqrt_2pi / sigma_cv;
 
     //Reset the vectors for the gaussians and selection
     x_sel.clear(); y_sel.clear();
 
-    g_x.clear(); g_y.clear();
-    g_x.resize(number_pixels); g_y.resize(number_pixels);
-    std::fill(g_x.begin(), g_x.end(), 0);
-    std::fill(g_y.begin(), g_y.end(), 0);
+    g_x = myvector_t(number_pixels, 0);
+    g_y = myvector_t(number_pixels, 0);
   }
 
-  for (int i=0; i<Icalc.size(); i++){ 
-    for (int j=0; j<Icalc[0].size(); j++){ 
+  for (int i=0; i<number_pixels; i++){ 
+    for (int j=0; j<number_pixels; j++){ 
         
-      Icalc[i][j] *= std::sqrt(2. * M_PI) * sigma_cv;     
+      Icalc[i][j] *= sqrt_2pi * sigma_cv;
     }
   }
 }
@@ -517,7 +521,7 @@ void Grad_cv::gradient(myvector_t &r, myvector_t &r_a, myvector_t &sgrad, const 
   if (R = "x") matmul(Icalc, Iexp_T, Sxy);
   if (R = "y") matmul(Iexp_T, Icalc, Sxy);
 
-  for (int i=0; i<sgrad.size(); i++){
+  for (int i=0; i<n_atoms; i++){
     for (int j=0; j<r.size(); j++){
 
       sgrad[i] += (r_a[i] - r[j]) * Sxy[j][j];
@@ -538,20 +542,20 @@ void Grad_cv::run(){
 
     
   //The convoluted image was written in Iexp because we need two images to test the cv and the gradient
-  std::cout << "\n Applying CTF to calcualted image ..." << std::endl;
+  /* std::cout << "\n Applying CTF to calcualted image ..." << std::endl;
   conv_proj_ctf();
   std::cout << "... done" << std::endl;
-
+ */
   myfloat_t Icalc_var = calc_I_variance();
 
   //Add gaussian noise with std equal to the intensity variance of the image times the SNR
-  I_with_noise(Icalc, Icalc_var * SNR);  
+  //I_with_noise(Icalc, Icalc_var * SNR);  
   
   std::cout << "\n Calculating CV and its gradient..." << std::endl;
 
   s_cv = collective_variable();
-  gradient(x, x_coord, grad_x, "x");
-  gradient(y, y_coord, grad_y, "y");
+  //gradient(x, x_coord, grad_x, "x");
+  //gradient(y, y_coord, grad_y, "y");
   //grad_z is already initialized with zeros
 
   results_to_json(s_cv, grad_x, grad_y, grad_z);
@@ -657,7 +661,8 @@ void Grad_cv::transpose(mymatrix_t &A, mymatrix_t &A_T){
 void Grad_cv::matmul(mymatrix_t &A, mymatrix_t &B, mymatrix_t &C){
 
   /**
-   * @brief Performs matrix multiplication of 2D matrices
+   * @brief Performs matrix multiplication of 2D matrices. The second
+   *        one is always transposed. So A * B_T = C
    * 
    * @param A matrix to be multiplied by the left (mymatrix_t)
    * @param B matrix to be multiplied by the right (mymatrix_t)
@@ -671,7 +676,7 @@ void Grad_cv::matmul(mymatrix_t &A, mymatrix_t &B, mymatrix_t &C){
 
       for (int k=0; k<A.size(); k++){
 
-          C[i][j] += A[i][k] * B[k][j]; //Typical matrix multiplication cij = sum_k aik bkj
+          C[i][j] += A[i][k] * B[j][k]; //Typical matrix multiplication cij = sum_k aik bkj
       }
     }
   }

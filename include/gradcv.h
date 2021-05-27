@@ -53,7 +53,7 @@ class Grad_cv {
  private:
 
   //***************** Declare variables
-  int number_pixels, number_pixels_fft_1d, sigma_reach;
+  int number_pixels, number_pixels_fft_1d, sigma_reach, n_atoms;
   myfloat_t pixel_size, sigma_cv;
   myfloat_t b_factor, defocus, CTF_amp, phase;
 
@@ -69,6 +69,7 @@ class Grad_cv {
   //***************** Default VALUES
   myfloat_t elecwavel = 0.019866;
   myfloat_t SNR = 1.0;
+  myfloat_t sqrt_2pi = std::sqrt(2. * M_PI);
 
 
   //Name of files used
@@ -134,6 +135,7 @@ public:
   void matmul(mymatrix_t &, mymatrix_t &, mymatrix_t &);
   void transpose(mymatrix_t &, mymatrix_t &);
   void print_image(mymatrix_t &, std::string);
+  void read_exp_img(std::string);
   int read_parameters(const char *);
   void load_quaternions(myvector_t &);
   void results_to_json(myfloat_t, myvector_t &, myvector_t &, myvector_t &);
