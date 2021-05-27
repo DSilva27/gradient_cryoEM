@@ -30,10 +30,16 @@ void Grad_cv::init_variables(){
 
   
   //Turn grad_* into a number_pixels vector and fill it with zeros
-  grad_x = myvector_t(n_atoms, 0);
-  grad_y = myvector_t(n_atoms, 0);
-  grad_z = myvector_t(n_atoms, 0);
+  grad_x = (myfloat_t*) malloc(sizeof(myfloat_t) * n_atoms);
+  grad_y = (myfloat_t*) malloc(sizeof(myfloat_t) * n_atoms);
+  grad_z = (myfloat_t*) malloc(sizeof(myfloat_t) * n_atoms);
 
+  for (int i=0; i<n_atoms; i++){
+
+    grad_x[i] = 0;
+    grad_y[i] = 0;
+    grad_z[i] = 0;
+  }
   std::cout << "Variables initialized" << std::endl;
 
   //#################### Read experimental image (includes defocus and quaternions) ###########################
@@ -259,6 +265,11 @@ void Grad_cv::I_calculated(){
   myvector_t g_x(number_pixels, 0.0);
   myvector_t g_y(number_pixels, 0.0);
 
+  //just some dummy variables used for optimization
+
+  std::ofstream fout;
+  
+  fout.open("test.txt");
   for (int atom=0; atom<n_atoms; atom++){
 
     //calculates the indices that satisfy |x - x_atom| <= sigma_reach*sigma
@@ -276,25 +287,28 @@ void Grad_cv::I_calculated(){
       g_y[y_sel[i]] = std::exp( -0.5 * (std::pow( (y[y_sel[i]] - y_coord[atom])/sigma_cv, 2 )) );
     }
 
+    myfloat_t s1=0, s2=0;
     //Calculate the image and the gradient
     for (int i=0; i<number_pixels; i++){ 
       for (int j=0; j<number_pixels; j++){ 
         
         Icalc[i][j] += g_x[i] * g_y[j];
-        grad_x[atom] += (x[i] - x_coord[atom]) * g_x[i] * g_y[j] * Iexp[i][j];
-        grad_y[atom] += (y[j] - y_coord[atom]) * g_x[i] * g_y[j] * Iexp[i][j];
+        s1 += (x[i] - x_coord[atom]) * g_x[i] * g_y[j] * Iexp[i][j];
+        s2 += (y[j] - y_coord[atom]) * g_x[i] * g_y[j] * Iexp[i][j];
       }
     }
 
-    grad_x[atom] *= -sqrt_2pi / sigma_cv;
-    grad_y[atom] *= -sqrt_2pi / sigma_cv;
+    fout << -s1 * sqrt_2pi / sigma_cv << std::endl;
+    //grad_x[atom] = -s1 * sqrt_2pi / sigma_cv;
+    //grad_y[atom] = -s2 * sqrt_2pi / sigma_cv;
 
     //Reset the vectors for the gaussians and selection
     x_sel.clear(); y_sel.clear();
-
     g_x = myvector_t(number_pixels, 0);
     g_y = myvector_t(number_pixels, 0);
   }
+
+  fout.close();
 
   for (int i=0; i<number_pixels; i++){ 
     for (int j=0; j<number_pixels; j++){ 
@@ -560,7 +574,7 @@ void Grad_cv::run(){
   //gradient(y, y_coord, grad_y, "y");
   //grad_z is already initialized with zeros
 
-  results_to_json(s_cv, grad_x, grad_y, grad_z);
+  //results_to_json(s_cv, grad_x, grad_y, grad_z);
   std::cout <<"\n ...done" << std::endl;
 }
 

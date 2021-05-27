@@ -93,7 +93,7 @@ system_universe = mda.Universe(system_pdb)
 rot_matrix = aligment_rotation_matrix(ref_universe, system_universe)
 
 #extract the positions
-system_atoms = system_universe.select_atoms('all').positions
+system_atoms = system_universe.select_atoms('name CA').positions
 
 #Define the origin as the center of mass
 system_atoms -= system_universe.atoms.center_of_mass()
@@ -102,10 +102,13 @@ system_atoms -= system_universe.atoms.center_of_mass()
 system_atoms_aligned = np.dot(rot_matrix, system_atoms.T)
 
 # Save the coordinates
-#if os.path.exists("data/input/coord.txt"):
-    #os.system("rm ../data/input/coord.txt")
+
 
 n_atoms = system_atoms_aligned.shape[1]
+
+if os.path.exists("data/input/coord.txt"):
+    os.system("rm data/input/coord.txt")
+
 with open("data/input/coord.txt", "a") as f:
     f.write("{cols}\n".format(cols=n_atoms))
     np.savetxt(f, system_atoms_aligned, fmt='%.4f')
@@ -120,12 +123,12 @@ def gen_img(index):
     os.system(f"./gradcv.out {index} > /dev/null 2>&1")
     return 1
 
-p = Pool(args.n_proc)
+# p = Pool(args.n_proc)
 
-print(f"Calculating gradient for {len(indexes)} images...")
-start = time.time()
-_ = p.map(gen_img, indexes)
-print("... done. Run time: {}".format(time.time() - start))
+# print(f"Calculating gradient for {len(indexes)} images...")
+# start = time.time()
+# _ = p.map(gen_img, indexes)
+# print("... done. Run time: {}".format(time.time() - start))
 
 
 print(f"You should be set to run:\n python python/process_gradient.py --n_img {args.n_img} --n_atoms {n_atoms}")

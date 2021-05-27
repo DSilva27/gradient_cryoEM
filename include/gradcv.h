@@ -92,9 +92,9 @@ class Grad_cv {
   //projections and gradients
   myfloat_t s_cv;
 
-  myvector_t grad_x;
-  myvector_t grad_y;
-  myvector_t grad_z;
+  myfloat_t* grad_x;
+  myfloat_t* grad_y;
+  myfloat_t* grad_z;
 
   mymatrix_t Icalc;
   mymatrix_t Iexp;
