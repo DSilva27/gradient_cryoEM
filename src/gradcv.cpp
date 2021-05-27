@@ -25,7 +25,8 @@ void Grad_cv::init_variables(){
   
   //Turn Icalc into a number_pixels x number_pixels matrix and fill it with zeros
   Icalc = mymatrix_t(number_pixels, myvector_t(number_pixels, 0));
-  Iexp = Icalc;
+  Iexp = mymatrix_t(number_pixels, myvector_t(number_pixels, 0));
+  quaternions = myvector_t(number_pixels, 0);
 
   
   //Turn grad_* into a number_pixels vector and fill it with zeros
@@ -34,6 +35,7 @@ void Grad_cv::init_variables(){
   grad_z = myvector_t(n_atoms, 0);
 
   std::cout << "Variables initialized" << std::endl;
+
   //#################### Read experimental image (includes defocus and quaternions) ###########################
   read_exp_img(image_file);
   phase = defocus * M_PI * 2. * 10000 * elecwavel;
@@ -637,8 +639,6 @@ void Grad_cv::arange(myvector_t &out_vec, myfloat_t xo, myfloat_t xf, myfloat_t 
     std::generate(out_vec.begin(), out_vec.end(), [n=0, &xo, &a_x]() mutable { return n++ * a_x + xo; });   
 }
 
-
-
 void Grad_cv::transpose(mymatrix_t &A, mymatrix_t &A_T){
 
   /**
@@ -717,7 +717,7 @@ void Grad_cv::read_exp_img(std::string fname){
 
   //Read defocus
   file >> defocus;
-
+  
   //Read quaternions
   for (int i=0; i<4; i++) file >> quaternions[i];
 

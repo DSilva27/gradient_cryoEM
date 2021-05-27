@@ -105,8 +105,9 @@ system_atoms_aligned = np.dot(rot_matrix, system_atoms.T)
 #if os.path.exists("data/input/coord.txt"):
     #os.system("rm ../data/input/coord.txt")
 
+n_atoms = system_atoms_aligned.shape[1]
 with open("data/input/coord.txt", "a") as f:
-    f.write("{cols}\n".format(cols=system_atoms_aligned.shape[1]))
+    f.write("{cols}\n".format(cols=n_atoms))
     np.savetxt(f, system_atoms_aligned, fmt='%.4f')
 
 ### RUNNING C++
@@ -121,9 +122,10 @@ def gen_img(index):
 
 p = Pool(args.n_proc)
 
-print(f"Generating {len(indexes)} images...")
+print(f"Calculating gradient for {len(indexes)} images...")
 start = time.time()
 _ = p.map(gen_img, indexes)
 print("... done. Run time: {}".format(time.time() - start))
 
 
+print(f"You should be set to run:\n python python/process_gradient.py --n_img {args.n_img} --n_atoms {n_atoms}")
