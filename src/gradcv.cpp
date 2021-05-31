@@ -574,7 +574,7 @@ void Grad_cv::run(){
   //gradient(y, y_coord, grad_y, "y");
   //grad_z is already initialized with zeros
 
-  //results_to_json(s_cv, grad_x, grad_y, grad_z);
+  results_to_json(s_cv, grad_x, grad_y, grad_z);
   std::cout <<"\n ...done" << std::endl;
 }
 
