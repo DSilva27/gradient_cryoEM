@@ -298,9 +298,9 @@ void Grad_cv::I_calculated(){
       }
     }
 
-    fout << -s1 * sqrt_2pi / sigma_cv << std::endl;
-    //grad_x[atom] = -s1 * sqrt_2pi / sigma_cv;
-    //grad_y[atom] = -s2 * sqrt_2pi / sigma_cv;
+    //fout << -s1 * sqrt_2pi / sigma_cv << std::endl;
+    grad_x[atom] = -s1 * sqrt_2pi / sigma_cv;
+    grad_y[atom] = -s2 * sqrt_2pi / sigma_cv;
 
     //Reset the vectors for the gaussians and selection
     x_sel.clear(); y_sel.clear();
