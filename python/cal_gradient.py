@@ -115,7 +115,6 @@ with open("data/input/coord.txt", "a") as f:
 
 ### RUNNING C++
 
-# Let's start with just three images
 indexes = np.array(range(0, args.n_img))
 
 def gen_img(index):
@@ -123,12 +122,12 @@ def gen_img(index):
     os.system(f"./gradcv.out {index} > /dev/null 2>&1")
     return 1
 
-# p = Pool(args.n_proc)
+p = Pool(args.n_proc)
 
-# print(f"Calculating gradient for {len(indexes)} images...")
-# start = time.time()
-# _ = p.map(gen_img, indexes)
-# print("... done. Run time: {}".format(time.time() - start))
+print(f"Calculating gradient for {len(indexes)} images...")
+start = time.time()
+_ = p.map(gen_img, indexes)
+print("... done. Run time: {}".format(time.time() - start))
 
 
 print(f"You should be set to run:\n python python/process_gradient.py --n_img {args.n_img} --n_atoms {n_atoms}")
