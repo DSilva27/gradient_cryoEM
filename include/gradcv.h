@@ -136,8 +136,8 @@ public:
   void transpose(mymatrix_t &, mymatrix_t &);
   void print_image(mymatrix_t &, std::string);
   void read_exp_img(std::string);
-  int read_parameters(const char *);
+  int read_parameters(std::string);
   void load_quaternions(myvector_t &);
-  void results_to_json(myfloat_t, myvector_t &, myvector_t &, myvector_t &);
+  void results_to_json(myfloat_t, myfloat_t*, myfloat_t*, myfloat_t*);
 };
 #endif

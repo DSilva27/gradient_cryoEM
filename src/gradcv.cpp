@@ -15,7 +15,7 @@ void Grad_cv::init_variables(){
 
   //############################### Read parameters and coordinates #####################################
   read_coord();
-  read_parameters(params_file.c_str());
+  read_parameters(params_file);
   number_pixels_fft_1d = number_pixels/2 + 1;
   n_atoms = x_coord.size();
 
@@ -71,7 +71,7 @@ void Grad_cv::read_coord(){
   std::cout << " +++++++++++++++++++++++++++++++++++++++++ \n";
   
   if (!coord_file.good()){
-    myError("Opening file: %s", coords_file);
+    myError("Opening file: %s", coords_file.c_str());
   }
 
   int N; //to store the number of atoms
@@ -726,7 +726,7 @@ void Grad_cv::read_exp_img(std::string fname){
   file.open(fname);
 
   if (!file.good()){
-    myError("Opening file: %s", fname);
+    myError("Opening file: %s", fname.c_str());
   }
 
   //Read defocus
@@ -744,12 +744,12 @@ void Grad_cv::read_exp_img(std::string fname){
   }
 }
 
-int Grad_cv::read_parameters(const char *fileinput){ 
+int Grad_cv::read_parameters(std::string fileinput){ 
 
   std::ifstream input(fileinput);
   if (!input.good())
   {
-    myError("Opening file: %s", fileinput);
+    myError("Opening file: %s", fileinput.c_str());
   }
 
   char line[512] = {0};
@@ -970,7 +970,7 @@ void Grad_cv::load_quaternions(myvector_t &q){
   file.close();
 }
 
-void Grad_cv::results_to_json(myfloat_t s, myvector_t &sgrad_x, myvector_t &sgrad_y, myvector_t &sgrad_z) {
+void Grad_cv::results_to_json(myfloat_t s, myfloat_t* sgrad_x, myfloat_t* sgrad_y, myfloat_t* sgrad_z) {
 
   std::ofstream gradfile;
 
@@ -988,9 +988,9 @@ void Grad_cv::results_to_json(myfloat_t s, myvector_t &sgrad_x, myvector_t &sgra
   gradfile << std::setw(17) << "\"sgrad_x\":"
            << "[" << std::endl;
 
-  for (int j=0; j<sgrad_x.size(); j++) {
+  for (int j=0; j<n_atoms; j++) {
 
-    if (j == sgrad_x.size() - 1) {
+    if (j == n_atoms - 1) {
 
       gradfile << std::setw(17) << std::left << " " << sgrad_x[j]
                << std::endl;
@@ -1010,9 +1010,9 @@ void Grad_cv::results_to_json(myfloat_t s, myvector_t &sgrad_x, myvector_t &sgra
   gradfile << std::setw(17) << "\"sgrad_y\":"
            << "[" << std::endl;
 
-  for (int j=0; j<sgrad_y.size(); j++) {
+  for (int j=0; j<n_atoms; j++) {
 
-    if (j == sgrad_y.size() - 1) {
+    if (j == n_atoms - 1) {
 
       gradfile << std::setw(17) << std::left << " " << sgrad_y[j]
                << std::endl;
@@ -1033,9 +1033,9 @@ void Grad_cv::results_to_json(myfloat_t s, myvector_t &sgrad_x, myvector_t &sgra
   gradfile << std::setw(17) << "\"sgrad_z\":"
            << "[" << std::endl;
 
-  for (int j=0; j<sgrad_z.size(); j++) {
+  for (int j=0; j<n_atoms; j++) {
 
-    if (j == sgrad_z.size() - 1) {
+    if (j == n_atoms - 1) {
 
       gradfile << std::setw(17) << std::left << " " << sgrad_z[j]
                << std::endl;
