@@ -37,6 +37,12 @@ git clone ...
 ./setup_env.sh
 #if not, then install using pip (replace the x with your python version)
 pythonx -m pip install matplotlib numpy MDAnalysis
+
+# go into the develop branch
+git checkout develop
+
+#build the c++ code (FFTW needs to be installed)
+make
 ```
 #### Possible errors
 If you get the error `CommandNotFoundError: Your shell has not been properly configured to use 'conda activate'.` just run `conda init <shell_name>` and then `conda activate em2d_end`.
@@ -49,12 +55,6 @@ If you get the error `CommandNotFoundError: Your shell has not been properly con
 ```
 #Activate the previous conda env
 conda activate em2d_env
-
-# go into the develop branch
-git checkout develop
-
-#build the c++ code (FFTW needs to be installed)
-make
 
 #Create input parameters for images (e.g., number of pixels, pixel size etc).  You should edit python/prep_parameters.py to set your own parameters
 python python/prep_input_files.py
