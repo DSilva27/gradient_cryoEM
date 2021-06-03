@@ -1,8 +1,5 @@
 from Bio import PDB
 import numpy as np
-import matplotlib.pyplot as plt
-from scipy.spatial.transform import Rotation as R
-
 import os
 import json
 import time
@@ -15,40 +12,6 @@ from MDAnalysis.analysis.rms import rmsd
 from multiprocessing import Pool
 
 
-#Define the functions that will be used
-
-def center_atomic_coord (x,y,z):
-    
-    x, y, z = x-np.mean(x), y-np.mean(y), z-np.mean(z)
-    return(x, y, z) 
-
-def quaternion_rotation(q, coord):
-    
-    '''
-    Performs a rotation using quaternions.
-    
-    If it is based from a quaternion q1 = w + xi + yj + zk, then the 
-    quaternion array q should be q = [x, y, z, w]
-    '''
-    
-    Q = R.from_quat(q).as_matrix()
-    rot_coord = np.dot(Q, coord)
-    
-    return rot_coord
-
-def read_grads():
-    # Retrieve gradients of each training step fron the text output files
-    # from the c++ program
-
-    with open("data/output/grad.json") as j_file:
-        data = json.load(j_file)[0]
-        s = data["s"]
-        x_grad = np.array(data['sgrad_x']) 
-        y_grad = np.array(data['sgrad_y'])
-        z_grad = np.array(data['sgrad_z'])
-
-        return s, np.array([x_grad, y_grad, z_grad])
-    
 def aligment_rotation_matrix(reference, system):
     
     '''
@@ -67,8 +30,7 @@ def aligment_rotation_matrix(reference, system):
 
 ### MAIN CODE ###
 
-##ADVICE THESE SHOULD BE INPUTS THAT THE USER CAN MODIFY
-
+# Parse flags
 parser = argparse.ArgumentParser()
 
 parser.add_argument("--n_proc", help="number of processors used. Default=1", default=1, type=int)
@@ -80,30 +42,27 @@ parser.add_argument("--system_pdb",
 
 args = parser.parse_args()
 
-#Set the pdb's with their paths
+# Set pdb file names
 ref_pdb = "data/input/" + args.ref_pdb
 system_pdb = "data/input/" + args.system_pdb
 
-
-#Importat 1xck's PDB to extract XYZ atomic coordinates
+# Create MD Universe objects
 ref_universe = mda.Universe(ref_pdb)
 system_universe = mda.Universe(system_pdb)
 
-#calculate the rotation matrix
+# Calculate the rotation matrix
 rot_matrix = aligment_rotation_matrix(ref_universe, system_universe)
 
-#extract the positions
+# Extract atomic positions
 system_atoms = system_universe.select_atoms('name CA').positions
 
-#Define the origin as the center of mass
+# Define the origin as the center of mass
 system_atoms -= system_universe.atoms.center_of_mass()
 
-#Rotate the coordinates
+# Rotate the coordinates
 system_atoms_aligned = np.dot(rot_matrix, system_atoms.T)
 
 # Save the coordinates
-
-
 n_atoms = system_atoms_aligned.shape[1]
 
 if os.path.exists("data/input/coord.txt"):
@@ -119,7 +78,7 @@ indexes = np.array(range(0, args.n_img))
 
 def gen_img(index):
 
-    os.system(f"./gradcv.out {index} > /dev/null 2>&1")
+    os.system(f"./gradcv.out {index} -grad > /dev/null 2>&1")
     return 1
 
 p = Pool(args.n_proc)

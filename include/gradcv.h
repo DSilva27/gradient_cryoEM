@@ -52,10 +52,13 @@ class Grad_cv {
     
  private:
 
+  //Defines if the program shall create a database or calculate a gradient
+  const char *p_type;
+
   //***************** Declare variables
   int number_pixels, number_pixels_fft_1d, sigma_reach, n_atoms;
   myfloat_t pixel_size, sigma_cv;
-  myfloat_t b_factor, defocus, CTF_amp, phase;
+  myfloat_t b_factor, defocus, CTF_amp, phase, min_defocus, max_defocus;
 
   myvector_t quaternions;
 
@@ -66,6 +69,7 @@ class Grad_cv {
   bool yesAMP = false;
   bool yesSigmaCV = false;
   bool yesSigmaReach = false;
+  bool yesDefocus = false;
   //***************** Default VALUES
   myfloat_t elecwavel = 0.019866;
   myfloat_t SNR = 1.0;
@@ -106,25 +110,29 @@ class Grad_cv {
 
 public:
 
-  Grad_cv(std::string, std::string, std::string, std::string);
+  Grad_cv();
   //~Grad_cv();
 
-  void init_variables();
+  void init_variables(std::string, std::string, 
+                      std::string, std::string,
+                      const char *);
   void prepare_FFTs();
 
   void read_coord();
   void center_coord(myvector_t &, myvector_t &, myvector_t &);
   void quaternion_rotation(myvector_t &);
 
-  void I_calculated();
+  void calc_I_and_grad();
+  void calc_I();
   void calc_ctf(mycomplex_t*);
   void conv_proj_ctf();
   
   void I_with_noise(mymatrix_t &, myfloat_t);
-  myfloat_t calc_I_variance();
+  void gaussian_normalization();
   myfloat_t collective_variable();
   void gradient(myvector_t &, myvector_t &, myvector_t &, const char *);
-  void run();
+  void grad_run();
+  void gen_run();
 
   //Utilities
   void arange(myvector_t &, myfloat_t, myfloat_t, myfloat_t);

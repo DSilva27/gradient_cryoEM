@@ -1,17 +1,20 @@
 #include "gradcv.h"
 
 
-Grad_cv::Grad_cv(std::string pf, std::string cf, std::string imf, std::string gradf){
-    
+Grad_cv::Grad_cv(){}
+
+//Grad_cv::~Grad_cv(){}
+
+void Grad_cv::init_variables(std::string pf, std::string cf, 
+                            std::string imf, std::string gradf,
+                            const char *type){
+
+  p_type = type;
+
   params_file = "data/input/" + pf;
   coords_file = "data/input/" + cf;
   image_file = "data/images/" + imf;
   json_file = "data/output/" + gradf;
-}
-
-//Grad_cv::~Grad_cv(){}
-
-void Grad_cv::init_variables(){
 
   //############################### Read parameters and coordinates #####################################
   read_coord();
@@ -19,33 +22,65 @@ void Grad_cv::init_variables(){
   number_pixels_fft_1d = number_pixels/2 + 1;
   n_atoms = x_coord.size();
 
+  //If we are creating images
+  if (p_type == "D"){
+
+    //Generate random defocus and calculate the phase
+    std::random_device seeder;
+    std::mt19937 engine(seeder());
+    std::uniform_real_distribution<myfloat_t> dist_def(min_defocus, max_defocus);
+    
+    defocus = dist_def(engine);
+    phase = defocus * M_PI * 2. * 10000 * elecwavel;
+
+    std::cout << "Defocus used: " << defocus << std::endl;
+
+      //############################ CALCULATING RANDOM QUATERNIONS #######################################
+    //Create a uniform distribution from 0 to 1
+    std::uniform_real_distribution<myfloat_t> dist_quat(0, 1);
+    myfloat_t u1, u2, u3;
+
+      //Generate random numbers betwwen 0 and 1
+    u1 = dist_quat(engine); u2 = dist_quat(engine); u3 = dist_quat(engine);
+    quaternions = myvector_t(4, 0);
+
+    //Random quaternion vector, check Shoemake, Graphic Gems III, p. 124-132
+    quaternions[0] = std::sqrt(1 - u1) * sin(2 * M_PI * u2);
+    quaternions[1] = std::sqrt(1 - u1) * cos(2 * M_PI * u2);
+    quaternions[2] = std::sqrt(u1) * sin(2 * M_PI * u3);
+    quaternions[3] = std::sqrt(u1) * cos(2 * M_PI * u3);
+  }
+
+  else if (p_type == "G"){
+
+    Iexp = mymatrix_t(number_pixels, myvector_t(number_pixels, 0));
+    quaternions = myvector_t(number_pixels, 0);
+
+    
+    //Turn grad_* into a number_pixels vector and fill it with zeros
+    grad_x = (myfloat_t*) malloc(sizeof(myfloat_t) * n_atoms);
+    grad_y = (myfloat_t*) malloc(sizeof(myfloat_t) * n_atoms);
+    grad_z = (myfloat_t*) malloc(sizeof(myfloat_t) * n_atoms);
+
+    for (int i=0; i<n_atoms; i++){
+
+      grad_x[i] = 0;
+      grad_y[i] = 0;
+      grad_z[i] = 0;
+    }
+    std::cout << "Variables initialized" << std::endl;
+
+    //#################### Read experimental image (includes defocus and quaternions) ###########################
+    read_exp_img(image_file);
+    phase = defocus * M_PI * 2. * 10000 * elecwavel;
+  }
+
   //######################### Preparing FFTWs and allocating memory for images and gradients ##################
   //Prepare FFTs
   prepare_FFTs();
   
   //Turn Icalc into a number_pixels x number_pixels matrix and fill it with zeros
   Icalc = mymatrix_t(number_pixels, myvector_t(number_pixels, 0));
-  Iexp = mymatrix_t(number_pixels, myvector_t(number_pixels, 0));
-  quaternions = myvector_t(number_pixels, 0);
-
-  
-  //Turn grad_* into a number_pixels vector and fill it with zeros
-  grad_x = (myfloat_t*) malloc(sizeof(myfloat_t) * n_atoms);
-  grad_y = (myfloat_t*) malloc(sizeof(myfloat_t) * n_atoms);
-  grad_z = (myfloat_t*) malloc(sizeof(myfloat_t) * n_atoms);
-
-  for (int i=0; i<n_atoms; i++){
-
-    grad_x[i] = 0;
-    grad_y[i] = 0;
-    grad_z[i] = 0;
-  }
-  std::cout << "Variables initialized" << std::endl;
-
-  //#################### Read experimental image (includes defocus and quaternions) ###########################
-  read_exp_img(image_file);
-  phase = defocus * M_PI * 2. * 10000 * elecwavel;
-
 }
 
 void Grad_cv::read_coord(){
@@ -227,7 +262,7 @@ void Grad_cv::quaternion_rotation(myvector_t &q){
   z_coord = z_r;
 }
 
-void Grad_cv::I_calculated(){
+void Grad_cv::calc_I_and_grad(){
 
   /**
    * @brief Calculates the image from the 3D model by representing the atoms as gaussians and using a 2d Grid
@@ -265,11 +300,6 @@ void Grad_cv::I_calculated(){
   myvector_t g_x(number_pixels, 0.0);
   myvector_t g_y(number_pixels, 0.0);
 
-  //just some dummy variables used for optimization
-
-  std::ofstream fout;
-  
-  fout.open("test.txt");
   for (int atom=0; atom<n_atoms; atom++){
 
     //calculates the indices that satisfy |x - x_atom| <= sigma_reach*sigma
@@ -298,17 +328,17 @@ void Grad_cv::I_calculated(){
       }
     }
 
-    //fout << -s1 * sqrt_2pi / sigma_cv << std::endl;
     grad_x[atom] = -s1 * sqrt_2pi / sigma_cv;
     grad_y[atom] = -s2 * sqrt_2pi / sigma_cv;
+
+    // *(grad_x + atom) = -s1 * sqrt_2pi / sigma_cv;
+    // *(grad_y + atom) = -s2 * sqrt_2pi / sigma_cv;
 
     //Reset the vectors for the gaussians and selection
     x_sel.clear(); y_sel.clear();
     g_x = myvector_t(number_pixels, 0);
     g_y = myvector_t(number_pixels, 0);
   }
-
-  fout.close();
 
   for (int i=0; i<number_pixels; i++){ 
     for (int j=0; j<number_pixels; j++){ 
@@ -317,6 +347,87 @@ void Grad_cv::I_calculated(){
     }
   }
 }
+
+void Grad_cv::calc_I(){
+
+  /**
+   * @brief Calculates the image from the 3D model by representing the atoms as gaussians and using a 2d Grid
+   * 
+   * @param x_coord original coordinates x
+   * @param y_coord original coordinates y
+   * @param z_coord original coordinates z
+   * @param sigma standard deviation for the gaussians, equal for all the atoms  (myfloat_t)
+   * @paramsigma_reachnumber of sigmas used for cutoff (int)
+   * @param number_pixels Resolution of the calculated image
+   * @param Icalc Matrix used to store the calculated image
+   * @param x values in x for the grid
+   * @param y values in y for the grid
+   * 
+   * @return void
+   * 
+   */
+
+  //Calculate minimum and maximum values for the linspace-like vectors x and y
+  myfloat_t min = -pixel_size * (number_pixels + 1)*0.5;
+  myfloat_t max = pixel_size * (number_pixels - 3)*0.5 + pixel_size;
+
+  //Assign memory space required to fill the vectors
+  x.resize(number_pixels); y.resize(number_pixels);
+
+  //Generate them
+  arange(x, min, max, pixel_size);
+  arange(y, min, max, pixel_size);
+
+  //Vectors used for masked selection of coordinates
+  std::vector <size_t> x_sel;
+  std::vector <size_t> y_sel;
+
+  //Vectors to store the values of the gaussians
+  myvector_t g_x(number_pixels, 0.0);
+  myvector_t g_y(number_pixels, 0.0);
+
+  for (int atom=0; atom<x_coord.size(); atom++){
+
+    //calculates the indices that satisfy |x - x_atom| <= sigma_reach*sigma
+    where(x, x_sel, x_coord[atom], sigma_reach * sigma_cv);
+    where(y, y_sel, y_coord[atom], sigma_reach * sigma_cv);
+
+    //calculate the gaussians
+    for (int i=0; i<x_sel.size(); i++){
+
+      g_x[x_sel[i]] = std::exp( -0.5 * (std::pow( (x[x_sel[i]] - x_coord[atom])/sigma_cv, 2 )) );
+    }
+
+    for (int i=0; i<y_sel.size(); i++){
+
+      g_y[y_sel[i]] = std::exp( -0.5 * (std::pow( (y[y_sel[i]] - y_coord[atom])/sigma_cv, 2 )) );
+    }
+
+    //Calculate the image
+    for (int i=0; i<Icalc.size(); i++){ 
+      for (int j=0; j<Icalc[0].size(); j++){ 
+        
+        Icalc[i][j] += g_x[i] * g_y[j];     
+      }
+    }
+
+    //Reset the vectors for the gaussians and selection
+    x_sel.clear(); y_sel.clear();
+
+    g_x.clear(); g_y.clear();
+    g_x.resize(number_pixels); g_y.resize(number_pixels);
+    std::fill(g_x.begin(), g_x.end(), 0);
+    std::fill(g_y.begin(), g_y.end(), 0);
+  }
+
+  for (int i=0; i<Icalc.size(); i++){ 
+    for (int j=0; j<Icalc[0].size(); j++){ 
+        
+      Icalc[i][j] *= std::sqrt(2. * M_PI) * sigma_cv;     
+    }
+  }
+}
+
 
 void Grad_cv::calc_ctf(mycomplex_t* ctf){
 
@@ -419,29 +530,6 @@ void Grad_cv::conv_proj_ctf(){
 
 }
 
-myfloat_t Grad_cv::calc_I_variance(){
-
-  myfloat_t mu=0, var=0;
-
-  myfloat_t rad_sq = pixel_size * (number_pixels + 1) * 0.25;
-  rad_sq = rad_sq * rad_sq;
-
-  std::vector <int> ins_circle;
-  where(x, y, ins_circle, rad_sq);
-  int N = ins_circle.size()/2; //Number of indexes
-
-  //Calculate the mean
-  for (int i=0; i<N; i++) mu += Icalc[ins_circle[i]][ins_circle[i+1]];
-  mu /= ins_circle.size();
-
-  //Calculate the variance
-  for (int i=0; i<N; i++) var += (Icalc[ins_circle[i]][ins_circle[i+1]] - mu) *
-                                 (Icalc[ins_circle[i]][ins_circle[i+1]] - mu);
-  var /= ins_circle.size();
-
-  return var;
-}
-
 void Grad_cv::I_with_noise(mymatrix_t &I, myfloat_t std=0.1){
 
   /**
@@ -461,6 +549,57 @@ void Grad_cv::I_with_noise(mymatrix_t &I, myfloat_t std=0.1){
     for (int j=0; j<number_pixels; j++){
 
       I[i][j] += dist(generator);
+    }
+  }
+}
+
+void Grad_cv::gaussian_normalization(){
+
+  myfloat_t mu=0, var=0;
+
+  myfloat_t rad_sq = pixel_size * (number_pixels + 1) * 0.5;
+  rad_sq = rad_sq * rad_sq;
+
+  std::vector <int> ins_circle;
+  where(x, y, ins_circle, rad_sq);
+  int N = ins_circle.size()/2; //Number of indexes
+
+  myfloat_t curr_float;
+  //Calculate the mean
+  for (int i=0; i<N; i++) {
+
+    curr_float = Icalc[ins_circle[i]][ins_circle[i+1]];
+    mu += curr_float;
+    var += curr_float * curr_float;
+  }
+
+  mu /= N;
+  var /= N;
+
+  var = std::sqrt(var - mu*mu);
+
+  //Add gaussian noise with std equal to the intensity variance of the image times the SNR
+  I_with_noise(Icalc, var * SNR);
+
+  mu = 0; var = 0;
+  for (int i=0; i<number_pixels; i++) {
+    for (int j=0; j<number_pixels; j++){
+
+      curr_float = Icalc[i][j];
+      mu += curr_float;
+      var += curr_float * curr_float;
+    }
+  }
+
+  mu /= number_pixels*number_pixels;
+  var /= number_pixels*number_pixels;
+
+  var = std::sqrt(var - mu*mu);
+
+  for (int i=0; i<number_pixels; i++){
+    for (int j=0; j<number_pixels; j++){
+
+      Icalc[i][j] = Icalc[i][j] / var;
     }
   }
 }
@@ -546,14 +685,14 @@ void Grad_cv::gradient(myvector_t &r, myvector_t &r_a, myvector_t &sgrad, const 
   }
 }
 
-void Grad_cv::run(){
+void Grad_cv::grad_run(){
 
 
   //Rotate the coordinates
   quaternion_rotation(quaternions);
 
   std::cout << "\n Performing image projection ..." << std::endl;
-  I_calculated();
+  calc_I_and_grad();
   std::cout << "... done" << std::endl;
 
     
@@ -562,7 +701,6 @@ void Grad_cv::run(){
   conv_proj_ctf();
   std::cout << "... done" << std::endl;
  */
-  myfloat_t Icalc_var = calc_I_variance();
 
   //Add gaussian noise with std equal to the intensity variance of the image times the SNR
   //I_with_noise(Icalc, Icalc_var * SNR);  
@@ -576,6 +714,28 @@ void Grad_cv::run(){
 
   results_to_json(s_cv, grad_x, grad_y, grad_z);
   std::cout <<"\n ...done" << std::endl;
+}
+
+void Grad_cv::gen_run(){
+
+
+  //Rotate the coordinates
+  quaternion_rotation(quaternions);
+
+  std::cout << "\n Performing image projection ..." << std::endl;
+  calc_I();
+  std::cout << "... done" << std::endl;
+
+    
+  //The convoluted image was written in Iexp because we need two images to test the cv and the gradient
+  // std::cout << "\n Applying CTF to calcualted image ..." << std::endl;
+  // conv_proj_ctf();
+  // std::cout << "... done" << std::endl;
+
+  gaussian_normalization();
+
+  print_image(Icalc, image_file);
+  std::cout << "\n The calculated image (with ctf) was saved in " << image_file << std::endl;
 }
 
 // Utilities
@@ -815,6 +975,21 @@ int Grad_cv::read_parameters(std::string fileinput){
       std::cout << "CTF Amp. " << CTF_amp << "\n";
       yesAMP = true;
     }
+
+    else if (strcmp(token, "CTF_DEFOCUS") == 0)
+    {
+      token = strtok(NULL, " ");
+      min_defocus = atof(token);
+      if (min_defocus < 0) myError("Negative min defocus");
+
+      token = strtok(NULL, " ");
+      max_defocus = atof(token);
+      if (max_defocus < 0) myError("Negative max defocus");
+
+      std::cout << "Defocus " << min_defocus << " " << max_defocus << "\n";
+      yesDefocus = true;
+    }
+
     else if (strcmp(token, "ELECTRON_WAVELENGTH") == 0)
     {
       token = strtok(NULL, " ");
@@ -870,6 +1045,10 @@ int Grad_cv::read_parameters(std::string fileinput){
   }
   if (not(yesSigmaReach)){
     myError("Input missing: please provide SIGMA_REACH");
+  }
+
+  if (not(yesDefocus) && p_type == "D"){
+    myError("Input missing: please provide CTF_DEFOCUS")
   }
 
   if (elecwavel == 0.019688)
