@@ -48,8 +48,8 @@ If you get the error `CommandNotFoundError: Your shell has not been properly con
 #Activate the previous conda env
 conda activate em2d_env
 
-# go into the c++ branch
-git checkout c++
+# go into the develop branch
+git checkout develop
 
 #build the c++ code (FFTW needs to be installed)
 make
@@ -69,8 +69,8 @@ python python/gen_images.py -n_proc [processors to be used] --n_img [images to b
 #Activate the previous conda env (if not done so)
 conda activate em2d_env
 
-# go into the c++ branch
-git checkout c++
+# go into the develop branch
+git checkout develop
 
 #build the c++ code 
 make
