@@ -79,5 +79,5 @@ make
 python python/prep_parameters.py
 
 # Run main code to calculate the gradient 
-python python/cal_gradient.py N_PROC --n_img N_IMG --ref_pdb REF_PDB --system_pdb SYSTEM_PDB
+python python/cal_gradient.py --n_proc N_PROC --n_img N_IMG --ref_pdb REF_PDB --system_pdb SYSTEM_PDB
 ```
