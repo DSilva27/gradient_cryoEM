@@ -44,7 +44,7 @@ If you get the error `CommandNotFoundError: Your shell has not been properly con
 ### Main steps for generating images from reference (only once)
 
 * Place the reference pdb (the one you're going to use to create the images) in data/input/
-* The images are generated using all the atoms, and Gaussians with the same width centered at their atomic positions.
+* The images are generated using all the atoms with Gaussians with the same width centered at their atomic positions.
 
 ```
 #Activate the previous conda env
