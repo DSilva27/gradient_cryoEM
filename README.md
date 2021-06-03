@@ -58,7 +58,7 @@ make
 python python/prep_input_files.py
 
 #Generate images in parallel (reference pdb MUST be in the data/input, otherwise it wont work)
-python python/gen_images.py -n_proc [processors to be used] --n_img [images to be generated] --ref_pdb [ref_pdb_without_path] 
+python python/gen_images.py --n_proc N_PROC --n_img N_IMG --ref_pdb REF_PDB
 ```
 
 ### Main steps for calculating the gradient 
