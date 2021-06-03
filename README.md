@@ -44,6 +44,8 @@ If you get the error `CommandNotFoundError: Your shell has not been properly con
 ### Main steps for generating images from reference (only once)
 
 * Place the reference pdb (the one you're going to use to create the images) in data/input/
+* The images are generated using all the atoms, and Gaussians with the same width centered at their atomic positions.
+
 ```
 #Activate the previous conda env
 conda activate em2d_env
@@ -58,26 +60,34 @@ make
 python python/prep_input_files.py
 
 #Generate images in parallel (reference pdb MUST be in the data/input, otherwise it wont work)
+# Example REF_PDB=apo.pdb that is in data/input (no need to include directory address)
 python python/gen_images.py --n_proc N_PROC --n_img N_IMG --ref_pdb REF_PDB
 ```
 
-### Main steps for calculating the gradient 
+### Main steps for calculating the gradient (same develop branch)
 
-* Place the structural pdb (from MD) in data/input/
+* Place the structural pdb (from MD) in data/input/ (e.g. system.pdb)
+* The default here is to calculate the gradient just with respect to the C-alpha atoms (but this can be changed)
 
 ```
-#Activate the previous conda env (if not done so)
+#Activate the previous conda env (if not activated)
 conda activate em2d_env
 
-# go into the develop branch
-git checkout develop
-
-#build the c++ code 
-make
-
-#Create input parameters for images (e.g., number of pixels, pixel size etc)
-python python/prep_parameters.py
-
 # Run main code to calculate the gradient 
+# REF_PDB and SYSTEM_PDB should be in data/input
 python python/cal_gradient.py --n_proc N_PROC --n_img N_IMG --ref_pdb REF_PDB --system_pdb SYSTEM_PDB
+
+### MISSING:
+### Gathering gradients and rotating them to the reference space
+python python/process_gradient.py --n_img N_IMG --n_atoms N_ATOMS
+
 ```
+### Output Files
+When generating images: 
+* data/input/parameters.txt: Parameters used to generate the synthetic images.
+* data/images/Ical_??.txt : Synthetic images: first item: defocus; second - fifth items: quaternions for projection; following items: image.
+
+When calculating the gradient:
+* data/input/coord.txt : aligned coordinates of system with reference structure.
+* data/output/grad_??.json: jason files with gradients
+* MISSING: file that had rotated gradients to put them all in the same reference space
