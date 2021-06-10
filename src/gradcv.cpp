@@ -423,7 +423,7 @@ void Grad_cv::calc_I(){
   for (int i=0; i<Icalc.size(); i++){ 
     for (int j=0; j<Icalc[0].size(); j++){ 
         
-      Icalc[i][j] *= std::sqrt(2. * M_PI) * sigma_cv;     
+      Icalc[i][j] /= 2*M_PI * sigma_cv*sigma_cv * n_atoms;
     }
   }
 }
