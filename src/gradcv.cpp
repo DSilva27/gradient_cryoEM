@@ -328,8 +328,8 @@ void Grad_cv::calc_I_and_grad(){
       }
     }
 
-    grad_x[atom] = -s1 * sqrt_2pi / sigma_cv;
-    grad_y[atom] = -s2 * sqrt_2pi / sigma_cv;
+    grad_x[atom] = -s1 / (2*M_PI * sigma_cv * sigma_cv * n_atoms);
+    grad_y[atom] = -s2 / (2*M_PI * sigma_cv * sigma_cv * n_atoms);
 
     // *(grad_x + atom) = -s1 * sqrt_2pi / sigma_cv;
     // *(grad_y + atom) = -s2 * sqrt_2pi / sigma_cv;
@@ -343,7 +343,7 @@ void Grad_cv::calc_I_and_grad(){
   for (int i=0; i<number_pixels; i++){ 
     for (int j=0; j<number_pixels; j++){ 
         
-      Icalc[i][j] *= sqrt_2pi * sigma_cv;
+      Icalc[i][j] /= 2*M_PI * sigma_cv*sigma_cv * n_atoms;
     }
   }
 }
