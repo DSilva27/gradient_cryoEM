@@ -62,11 +62,17 @@ void Grad_cv::init_variables(std::string pf, std::string cf,
     grad_y = (myfloat_t*) malloc(sizeof(myfloat_t) * n_atoms);
     grad_z = (myfloat_t*) malloc(sizeof(myfloat_t) * n_atoms);
 
+    grad_Ix = (myfloat_t*) malloc(sizeof(myfloat_t) * n_atoms);
+    grad_Iy = (myfloat_t*) malloc(sizeof(myfloat_t) * n_atoms);
+
     for (int i=0; i<n_atoms; i++){
 
       grad_x[i] = 0;
       grad_y[i] = 0;
       grad_z[i] = 0;
+
+      grad_Ix[i] = 0;
+      grad_Iy[i] = 0;
     }
     std::cout << "Variables initialized" << std::endl;
 
@@ -317,7 +323,7 @@ void Grad_cv::calc_I_and_grad(){
       g_y[y_sel[i]] = std::exp( -0.5 * (std::pow( (y[y_sel[i]] - y_coord[atom])/sigma_cv, 2 )) );
     }
 
-    myfloat_t s1=0, s2=0;
+    myfloat_t s1=0, s2=0, s3=0, s4=0;
     //Calculate the image and the gradient
     for (int i=0; i<number_pixels; i++){ 
       for (int j=0; j<number_pixels; j++){ 
@@ -325,14 +331,16 @@ void Grad_cv::calc_I_and_grad(){
         Icalc[i][j] += g_x[i] * g_y[j];
         s1 += (x[i] - x_coord[atom]) * g_x[i] * g_y[j] * Iexp[i][j];
         s2 += (y[j] - y_coord[atom]) * g_x[i] * g_y[j] * Iexp[i][j];
+        s3 += (x[i] - x_coord[atom]) * g_x[i] * g_y[j];
+        s4 += (y[j] - y_coord[atom]) * g_x[i] * g_y[j];
       }
     }
 
-    grad_x[atom] = -s1 * sqrt_2pi / sigma_cv;
-    grad_y[atom] = -s2 * sqrt_2pi / sigma_cv;
+    grad_x[atom] = -s1 * (2*M_PI * sigma_cv * sigma_cv);
+    grad_y[atom] = -s2 * (2*M_PI * sigma_cv * sigma_cv);
+    grad_Ix[atom] = s3 * (2*M_PI * sigma_cv * sigma_cv);
+    grad_Iy[atom] = s4 * (2*M_PI * sigma_cv * sigma_cv);
 
-    // *(grad_x + atom) = -s1 * sqrt_2pi / sigma_cv;
-    // *(grad_y + atom) = -s2 * sqrt_2pi / sigma_cv;
 
     //Reset the vectors for the gaussians and selection
     x_sel.clear(); y_sel.clear();
@@ -343,8 +351,18 @@ void Grad_cv::calc_I_and_grad(){
   for (int i=0; i<number_pixels; i++){ 
     for (int j=0; j<number_pixels; j++){ 
         
-      Icalc[i][j] *= sqrt_2pi * sigma_cv;
+      Icalc[i][j] /= (2*M_PI * sigma_cv * sigma_cv);
+      Ie_c += Icalc[i][j];
+      Ie_e += Iexp[i][j];
     }
+  }
+
+  s_cv = collective_variable();
+
+  for (int i=0; i<n_atoms; i++){
+    
+    grad_x[i] = grad_x[i]/s_cv - grad_Ix[i]/Ie_c;
+    grad_y[i] = grad_y[i]/s_cv - grad_Iy[i]/Ie_c;
   }
 }
 
@@ -423,7 +441,7 @@ void Grad_cv::calc_I(){
   for (int i=0; i<Icalc.size(); i++){ 
     for (int j=0; j<Icalc[0].size(); j++){ 
         
-      Icalc[i][j] *= std::sqrt(2. * M_PI) * sigma_cv;     
+      Icalc[i][j] /= 2. * M_PI * sigma_cv * sigma_cv * n_atoms;     
     }
   }
 }
@@ -636,11 +654,10 @@ myfloat_t Grad_cv::collective_variable(){
     for (int j=0; j<number_pixels; j++){
 
       s += Icalc[i][j] * Iexp[i][j];
-      Icalc_sum += Icalc[i][j] * Icalc[i][j];
-      Iexp_sum += Iexp[i][j] * Iexp[i][j];
     }
   }
 
+  s /= (Ie_c * Ie_e); 
   //Normalize cv (still have to normalize the gradient!)
   return -s; // / (Icalc_sum * Iexp_sum);
 }
@@ -707,7 +724,7 @@ void Grad_cv::grad_run(){
   
   std::cout << "\n Calculating CV and its gradient..." << std::endl;
 
-  s_cv = collective_variable();
+  
   //gradient(x, x_coord, grad_x, "x");
   //gradient(y, y_coord, grad_y, "y");
   //grad_z is already initialized with zeros
