@@ -26,7 +26,7 @@ Modeling with gaussians parameters
 ### Change this parameters as you see fit
 
 number_pixels = 124
-pixel_size = 1.77
+pixel_size = 1.
 
 ctf_env = 1.0
 

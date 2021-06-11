@@ -42,19 +42,19 @@ void Grad_cv::init_variables(std::string pf, std::string cf,
 
       //Generate random numbers betwwen 0 and 1
     u1 = dist_quat(engine); u2 = dist_quat(engine); u3 = dist_quat(engine);
-    quaternions = myvector_t(4, 0);
+    quat = myvector_t(4, 0);
 
     //Random quaternion vector, check Shoemake, Graphic Gems III, p. 124-132
-    quaternions[0] = std::sqrt(1 - u1) * sin(2 * M_PI * u2);
-    quaternions[1] = std::sqrt(1 - u1) * cos(2 * M_PI * u2);
-    quaternions[2] = std::sqrt(u1) * sin(2 * M_PI * u3);
-    quaternions[3] = std::sqrt(u1) * cos(2 * M_PI * u3);
+    quat[0] = std::sqrt(1 - u1) * sin(2 * M_PI * u2);
+    quat[1] = std::sqrt(1 - u1) * cos(2 * M_PI * u2);
+    quat[2] = std::sqrt(u1) * sin(2 * M_PI * u3);
+    quat[3] = std::sqrt(u1) * cos(2 * M_PI * u3);
   }
 
   else if (p_type == "G"){
 
     Iexp = mymatrix_t(number_pixels, myvector_t(number_pixels, 0));
-    quaternions = myvector_t(number_pixels, 0);
+    quat = myvector_t(number_pixels, 0);
 
     
     //Turn grad_* into a number_pixels vector and fill it with zeros
@@ -123,9 +123,7 @@ void Grad_cv::read_coord(){
     else if (col >= 2*N) z_coord.push_back(a);
   } 
 
-
-
-std::cout << "Number of atoms: " << n_atoms << std::endl;
+  std::cout << "Number of atoms: " << n_atoms << std::endl;
 }
 
 void Grad_cv::prepare_FFTs(){
@@ -211,16 +209,17 @@ void Grad_cv::center_coord(myvector_t &x_a,  myvector_t &y_a,  myvector_t &z_a){
   }
 }
 
-void Grad_cv::quaternion_rotation(myvector_t &q){
+void Grad_cv::quaternion_rotation(myvector_t &q, myvector_t &x_data, 
+                                  myvector_t &y_data, myvector_t &z_data){
 
 /**
  * @brief Rotates a biomolecule using the quaternions rotation matrix
  *        according to (https://en.wikipedia.org/wiki/Rotation_matrix#Quaternion)
  * 
  * @param q vector that stores the parameters for the rotation myvector_t (4)
- * @param x_coord original coordinates x
- * @param y_coord original coordinates y
- * @param z_coord original coordinates z
+ * @param x_data original coordinates x
+ * @param y_data original coordinates y
+ * @param z_data original coordinates z
  * @param x_r stores the rotated values x
  * @param y_r stores the rotated values x
  * @param z_r stores the rotated values x
@@ -252,14 +251,60 @@ void Grad_cv::quaternion_rotation(myvector_t &q){
 
   for (unsigned int i=0; i<n_atoms; i++){
 
-    x_r[i] = x_coord[i]*Q[0][0] + y_coord[i]*Q[0][1] + z_coord[i]*Q[0][2];
-    y_r[i] = x_coord[i]*Q[1][0] + y_coord[i]*Q[1][1] + z_coord[i]*Q[1][2];
-    z_r[i] = x_coord[i]*Q[2][0] + y_coord[i]*Q[2][1] + z_coord[i]*Q[2][2];
+    x_r[i] = x_data[i]*Q[0][0] + y_data[i]*Q[0][1] + z_data[i]*Q[0][2];
+    y_r[i] = x_data[i]*Q[1][0] + y_data[i]*Q[1][1] + z_data[i]*Q[1][2];
+    z_r[i] = x_data[i]*Q[2][0] + y_data[i]*Q[2][1] + z_data[i]*Q[2][2];
   }
 
-  x_coord = x_r;
-  y_coord = y_r;
-  z_coord = z_r;
+  x_data = x_r;
+  y_data = y_r;
+  z_data = z_r;
+}
+
+void Grad_cv::quaternion_rotation(myvector_t &q, myfloat_t* x_data, 
+                                  myfloat_t* y_data, myfloat_t* z_data){
+
+/**
+ * @brief Rotates a biomolecule using the quaternions rotation matrix
+ *        according to (https://en.wikipedia.org/wiki/Rotation_matrix#Quaternion)
+ * 
+ * @param q vector that stores the parameters for the rotation myvector_t (4)
+ * @param x_data original coordinates x
+ * @param y_data original coordinates y
+ * @param z_data original coordinates z
+ * @param x_r stores the rotated values x
+ * @param y_r stores the rotated values x
+ * @param z_r stores the rotated values x
+ * 
+ * @return void
+ * 
+ */
+
+  //Definition of the quaternion rotation matrix 
+
+  myfloat_t q00 = 1 - 2*std::pow(q[1],2) - 2*std::pow(q[2],2);
+  myfloat_t q01 = 2*q[0]*q[1] - 2*q[2]*q[3];
+  myfloat_t q02 = 2*q[0]*q[2] + 2*q[1]*q[3];
+  myvector_t q0{ q00, q01, q02 };
+  
+  myfloat_t q10 = 2*q[0]*q[1] + 2*q[2]*q[3];
+  myfloat_t q11 = 1 - 2*std::pow(q[0],2) - 2*std::pow(q[2],2);
+  myfloat_t q12 = 2*q[1]*q[2] - 2*q[0]*q[3];
+  myvector_t q1{ q10, q11, q12 };
+
+  myfloat_t q20 = 2*q[0]*q[2] - 2*q[1]*q[3];
+  myfloat_t q21 = 2*q[1]*q[2] + 2*q[0]*q[3];
+  myfloat_t q22 = 1 - 2*std::pow(q[0],2) - 2*std::pow(q[1],2);
+  myvector_t q2{ q20, q21, q22};
+
+  mymatrix_t Q{ q0, q1, q2 };
+
+  for (unsigned int i=0; i<n_atoms; i++){
+
+    x_data[i] = x_data[i]*Q[0][0] + y_data[i]*Q[0][1] + z_data[i]*Q[0][2];
+    y_data[i] = x_data[i]*Q[1][0] + y_data[i]*Q[1][1] + z_data[i]*Q[1][2];
+    z_data[i] = x_data[i]*Q[2][0] + y_data[i]*Q[2][1] + z_data[i]*Q[2][2];
+  }
 }
 
 void Grad_cv::calc_I_and_grad(){
@@ -427,7 +472,6 @@ void Grad_cv::calc_I(){
     }
   }
 }
-
 
 void Grad_cv::calc_ctf(mycomplex_t* ctf){
 
@@ -689,12 +733,16 @@ void Grad_cv::grad_run(){
 
 
   //Rotate the coordinates
-  quaternion_rotation(quaternions);
+  quaternion_rotation(quat, x_coord, y_coord, z_coord);
 
-  std::cout << "\n Performing image projection ..." << std::endl;
+  std::cout << "\n Performing image projection and calculating gradient..." 
+            << std::endl;
+
   calc_I_and_grad();
   std::cout << "... done" << std::endl;
 
+  //Rotating gradient
+  quaternion_rotation(quat_inv, grad_x, grad_y, grad_z);
     
   //The convoluted image was written in Iexp because we need two images to test the cv and the gradient
   /* std::cout << "\n Applying CTF to calcualted image ..." << std::endl;
@@ -716,11 +764,16 @@ void Grad_cv::grad_run(){
   std::cout <<"\n ...done" << std::endl;
 }
 
-void Grad_cv::gen_run(){
+void Grad_cv::gen_run(bool use_qt){
 
 
   //Rotate the coordinates
-  quaternion_rotation(quaternions);
+
+  if (use_qt) {
+    
+    std::cout << "Using random quaternions: " << use_qt << std::endl;
+    quaternion_rotation(quat, x_coord, y_coord, z_coord);
+  }
 
   std::cout << "\n Performing image projection ..." << std::endl;
   calc_I();
@@ -867,7 +920,7 @@ void Grad_cv::print_image(mymatrix_t &Im, std::string fname){
 
   for (int i=0; i<4; i++){
 
-    matrix_file << std::scientific << std::showpos << quaternions[i] << " \n";
+    matrix_file << std::scientific << std::showpos << quat[i] << " \n";
   }
 
   for (int i=0; i<number_pixels; i++){
@@ -893,7 +946,20 @@ void Grad_cv::read_exp_img(std::string fname){
   file >> defocus;
   
   //Read quaternions
-  for (int i=0; i<4; i++) file >> quaternions[i];
+  for (int i=0; i<4; i++) file >> quat[i];
+
+  //Create inverse quat
+  quat_inv = myvector_t(4, 0);
+
+  float quat_abs = quat[0]*quat[0] + 
+                   quat[1]*quat[1] +
+                   quat[2]*quat[2] +
+                   quat[3]*quat[3];
+
+  quat_inv[0] = -quat[0] / quat_abs;
+  quat_inv[1] = -quat[1] / quat_abs;
+  quat_inv[2] = -quat[2] / quat_abs;
+  quat_inv[3] =  quat[3] / quat_abs;
 
   //Read image
   for (int i=0; i<number_pixels; i++){
