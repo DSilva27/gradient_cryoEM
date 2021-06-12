@@ -25,7 +25,15 @@ int main(int argc, char* argv[]){
   test.init_variables(param_file, coord_file, out_im_file, out_json_file, type);
 
   if ( strcmp(argv[2], "-grad") == 0) test.grad_run();
-  else if ( strcmp(argv[2], "-gen") == 0) test.gen_run();
+  else if ( strcmp(argv[2], "-gen") == 0){
+    
+    if ( strcmp(argv[3], "-qt") == 0){
+
+      test.gen_run(true);
+    }
+
+    else test.gen_run(false);
+  } 
   
   return 0;
 }

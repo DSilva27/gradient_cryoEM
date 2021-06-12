@@ -60,7 +60,7 @@ class Grad_cv {
   myfloat_t pixel_size, sigma_cv;
   myfloat_t b_factor, defocus, CTF_amp, phase, min_defocus, max_defocus;
 
-  myvector_t quaternions;
+  myvector_t quat, quat_inv;
 
   //***************** Control for parameters
   bool yesPixSi = false;
@@ -120,7 +120,8 @@ public:
 
   void read_coord();
   void center_coord(myvector_t &, myvector_t &, myvector_t &);
-  void quaternion_rotation(myvector_t &);
+  void quaternion_rotation(myvector_t &, myvector_t &, myvector_t &, myvector_t &);
+  void quaternion_rotation(myvector_t &, myfloat_t*, myfloat_t*, myfloat_t*);
 
   void calc_I_and_grad();
   void calc_I();
@@ -132,7 +133,7 @@ public:
   myfloat_t collective_variable();
   void gradient(myvector_t &, myvector_t &, myvector_t &, const char *);
   void grad_run();
-  void gen_run();
+  void gen_run(bool);
 
   //Utilities
   void arange(myvector_t &, myfloat_t, myfloat_t, myfloat_t);
