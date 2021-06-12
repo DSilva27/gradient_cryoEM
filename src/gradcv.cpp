@@ -785,7 +785,7 @@ void Grad_cv::gen_run(bool use_qt){
   // conv_proj_ctf();
   // std::cout << "... done" << std::endl;
 
-  gaussian_normalization();
+  if (use_qt) gaussian_normalization();
 
   print_image(Icalc, image_file);
   std::cout << "\n The calculated image (with ctf) was saved in " << image_file << std::endl;

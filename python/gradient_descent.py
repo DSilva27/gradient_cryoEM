@@ -92,6 +92,7 @@ class optimizer:
         self.n_atoms = self.system_atoms.shape[1]
         print(self.system_atoms.shape)
 
+
     def accumulate_gradient(self):
 
         self.grad = np.zeros((3, self.n_atoms))
@@ -136,7 +137,7 @@ class optimizer:
     # \param img_stride An image will be printed every img_stride steps
     def grad_descent(self, n_steps, alpha, img_stride):
         
-        img_counter = 0
+        img_counter = -1
         for i in range(n_steps):
             
             #Calculate the gradient
@@ -148,10 +149,12 @@ class optimizer:
 
             #Print images
             if i%img_stride == 0:
-                os.system(f"./gradcv.out {self.n_img + img_counter} -gen -no > /dev/null 2>&1")
-                img_counter +=1
+                os.system(f"./gradcv.out {img_counter} -gen -no > /dev/null 2>&1")
+                os.system(f"mv data/images/Icalc_{img_counter}.txt \
+                    data/gd_images/gd_image_{-img_counter-1}.txt")
+                img_counter -=1
 
-            
+ 
 def main():
 
 
@@ -173,7 +176,7 @@ def main():
     system_pdb = "random"
 
     opt = optimizer(n_proc, n_img, ref_pdb, system_pdb)
-    opt.grad_descent(100, 1000, 10)
+    opt.grad_descent(100, 1000, 2)
 
 
 if __name__ == '__main__':
