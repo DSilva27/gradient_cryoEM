@@ -68,6 +68,7 @@ n_atoms = system_atoms_aligned.shape[1]
 if os.path.exists("data/input/coord.txt"):
     os.system("rm data/input/coord.txt")
 
+print(f"Saving coordinates with {n_atoms}")
 with open("data/input/coord.txt", "a") as f:
     f.write("{cols}\n".format(cols=n_atoms))
     np.savetxt(f, system_atoms_aligned, fmt='%.4f')

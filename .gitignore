@@ -36,13 +36,3 @@
 .vscode
 experiments/
 venvs/
-
-data/output/
-!data/output/empty_file.txt
-
-data/images/
-!data/images/empty_file.txt
-
-data/input/
-!data/input/apo.pdb
-!data/input/holo.pdb

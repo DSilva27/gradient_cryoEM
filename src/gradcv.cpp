@@ -689,7 +689,7 @@ void Grad_cv::grad_run(){
 
 
   //Rotate the coordinates
-  quaternion_rotation(quaternions);
+  //quaternion_rotation(quaternions);
 
   std::cout << "\n Performing image projection ..." << std::endl;
   calc_I_and_grad();
@@ -720,7 +720,7 @@ void Grad_cv::gen_run(){
 
 
   //Rotate the coordinates
-  quaternion_rotation(quaternions);
+  //quaternion_rotation(quaternions);
 
   std::cout << "\n Performing image projection ..." << std::endl;
   calc_I();
@@ -732,7 +732,7 @@ void Grad_cv::gen_run(){
   // conv_proj_ctf();
   // std::cout << "... done" << std::endl;
 
-  gaussian_normalization();
+  //gaussian_normalization();
 
   print_image(Icalc, image_file);
   std::cout << "\n The calculated image (with ctf) was saved in " << image_file << std::endl;

@@ -26,7 +26,8 @@ system_atoms = ref_universe.select_atoms('all').positions
 
 # Define the origin as the center of mass
 system_atoms -= ref_universe.atoms.center_of_mass()
-
+system_atoms = system_atoms.T
+n_atoms = system_atoms.shape[1]
 
 # Save the coordinates
 if os.path.exists("data/input/coord.txt"):
