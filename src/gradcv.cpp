@@ -336,10 +336,10 @@ void Grad_cv::calc_I_and_grad(){
       }
     }
 
-    grad_x[atom] = -s1 * (2*M_PI * sigma_cv * sigma_cv);
-    grad_y[atom] = -s2 * (2*M_PI * sigma_cv * sigma_cv);
-    grad_Ix[atom] = s3 * (2*M_PI * sigma_cv * sigma_cv);
-    grad_Iy[atom] = s4 * (2*M_PI * sigma_cv * sigma_cv);
+    grad_x[atom] = s1; 
+    grad_y[atom] = s2; 
+    grad_Ix[atom] = s3;
+    grad_Iy[atom] = s4;
 
 
     //Reset the vectors for the gaussians and selection
@@ -351,19 +351,22 @@ void Grad_cv::calc_I_and_grad(){
   for (int i=0; i<number_pixels; i++){ 
     for (int j=0; j<number_pixels; j++){ 
         
-      Icalc[i][j] /= (2*M_PI * sigma_cv * sigma_cv);
+      //Icalc[i][j] /= (2*M_PI * sigma_cv * sigma_cv);
       Ie_c += Icalc[i][j];
       Ie_e += Iexp[i][j];
     }
   }
 
-  s_cv = collective_variable();
+  s_cv = -collective_variable();
+  myfloat_t gcr = -s_cv / (Ie_c * Ie_e);
 
   for (int i=0; i<n_atoms; i++){
     
-    grad_x[i] = grad_x[i]/s_cv - grad_Ix[i]/Ie_c;
-    grad_y[i] = grad_y[i]/s_cv - grad_Iy[i]/Ie_c;
+    grad_x[i] = gcr * (grad_x[i]/s_cv - grad_Ix[i]/Ie_c);
+    grad_y[i] = gcr * (grad_y[i]/s_cv - grad_Iy[i]/Ie_c);
   }
+
+  std::cout << "Gradient: " << grad_x[0] << std::endl;
 }
 
 void Grad_cv::calc_I(){
@@ -656,8 +659,6 @@ myfloat_t Grad_cv::collective_variable(){
       s += Icalc[i][j] * Iexp[i][j];
     }
   }
-
-  s /= (Ie_c * Ie_e); 
   //Normalize cv (still have to normalize the gradient!)
   return -s; // / (Icalc_sum * Iexp_sum);
 }
