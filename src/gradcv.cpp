@@ -387,6 +387,8 @@ void Grad_cv::calc_I_and_grad(){
     g_y = myvector_t(number_pixels, 0);
   }
 
+  std::cout << "Gradient: " << grad_x[0] << std::endl;
+  
   for (int i=0; i<number_pixels; i++){ 
     for (int j=0; j<number_pixels; j++){ 
         
@@ -736,7 +738,7 @@ void Grad_cv::grad_run(){
 
 
   //Rotate the coordinates
-  quaternion_rotation(quat, x_coord, y_coord, z_coord);
+  //quaternion_rotation(quat, x_coord, y_coord, z_coord);
 
   std::cout << "\n Performing image projection ..." << std::endl;
   calc_I_and_grad();

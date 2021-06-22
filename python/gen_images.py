@@ -26,14 +26,15 @@ system_atoms = ref_universe.select_atoms('all').positions
 
 # Define the origin as the center of mass
 system_atoms -= ref_universe.atoms.center_of_mass()
-
+system_atoms = system_atoms.T
+n_atoms = system_atoms.shape[1]
 
 # Save the coordinates
 if os.path.exists("data/input/coord.txt"):
     os.system("rm data/input/coord.txt")
 
 with open("data/input/coord.txt", "a") as f:
-    f.write("{cols}\n".format(cols=system_atoms.shape[1])) 
+    f.write("{cols}\n".format(cols=n_atoms)) 
     np.savetxt(f, system_atoms, fmt='%.4f')
 
 ### RUNNING C++
