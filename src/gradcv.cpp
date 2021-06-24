@@ -347,6 +347,8 @@ void Grad_cv::calc_I_and_grad(){
   myvector_t g_x(number_pixels, 0.0);
   myvector_t g_y(number_pixels, 0.0);
 
+  myfloat_t norm = 1. / (2*M_PI * sigma_cv*sigma_cv * n_atoms);
+
   for (int atom=0; atom<n_atoms; atom++){
 
     //calculates the indices that satisfy |x - x_atom| <= sigma_reach*sigma
@@ -375,11 +377,8 @@ void Grad_cv::calc_I_and_grad(){
       }
     }
 
-    grad_x[atom] = -s1 / (2*M_PI * sigma_cv * sigma_cv * n_atoms);
-    grad_y[atom] = -s2 / (2*M_PI * sigma_cv * sigma_cv * n_atoms);
-
-    // *(grad_x + atom) = -s1 * sqrt_2pi / sigma_cv;
-    // *(grad_y + atom) = -s2 * sqrt_2pi / sigma_cv;
+    grad_x[atom] = -s1 * norm;
+    grad_y[atom] = -s2 * norm;
 
     //Reset the vectors for the gaussians and selection
     x_sel.clear(); y_sel.clear();
@@ -392,7 +391,7 @@ void Grad_cv::calc_I_and_grad(){
   for (int i=0; i<number_pixels; i++){ 
     for (int j=0; j<number_pixels; j++){ 
         
-      Icalc[i][j] /= 2*M_PI * sigma_cv*sigma_cv * n_atoms;
+      Icalc[i][j] *= norm;
     }
   }
 }
@@ -738,7 +737,7 @@ void Grad_cv::grad_run(){
 
 
   //Rotate the coordinates
-  //quaternion_rotation(quat, x_coord, y_coord, z_coord);
+  quaternion_rotation(quat, x_coord, y_coord, z_coord);
 
   std::cout << "\n Performing image projection ..." << std::endl;
   calc_I_and_grad();

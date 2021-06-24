@@ -45,7 +45,7 @@ indexes = np.array(range(0, args.n_img))
 # Small function to generate an image
 def gen_img(index):
 
-    os.system(f"./gradcv.out {index} -gen > /dev/null 2>&1")
+    os.system(f"./gradcv.out {index} -gen -qt > /dev/null 2>&1")
     return 1
 
 p = Pool(args.n_proc)
