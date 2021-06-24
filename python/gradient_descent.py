@@ -1,5 +1,5 @@
-from Bio import PDB
 import numpy as np
+import pandas as pd
 import os
 import json
 import time
@@ -30,6 +30,11 @@ def run_cpp(index):
         os.system(f"./gradcv.out {index} -grad > /dev/null 2>&1")
         return 1
 
+def rmsd(r1, r2, N):
+    R = np.sqrt(np.sum(np.sum((r1 - r2)**2, axis=0)) / N)
+
+    return R
+
 class optimizer:
 
     def __init__(self, n_proc, n_img, ref_pdb, system_pdb):
@@ -54,15 +59,11 @@ class optimizer:
         ref_coords = self.ref_universe.select_atoms('name CA').positions - \
                      self.ref_universe.atoms.center_of_mass()
 
-        random_coords = 2 * np.random.random(ref_coords.shape) - 1
-
-        random_coords[:,0] *= np.max(ref_coords[:,0])
-        random_coords[:,1] *= np.max(ref_coords[:,1])
-        random_coords[:,2] *= np.max(ref_coords[:,2])
+        random_coords = ref_coords + 5*np.random.normal(0, 1, ref_coords.shape)
 
         self.n_atoms = ref_coords.shape[0]
         self.system_atoms = random_coords.T
-        print(self.system_atoms.shape)
+        self.ref_coords = ref_coords
         
         
     def align_system(self):
@@ -135,24 +136,56 @@ class optimizer:
     # \param n_steps How many steps of gradient descent will be done
     # \param alpha Learning rate
     # \param img_stride An image will be printed every img_stride steps
-    def grad_descent(self, n_steps, alpha, img_stride):
+    def grad_descent(self, n_steps, alpha, img_stride, tol=1.5):
         
+        self.write_frame(self.ref_coords.T, 0, "data/gd_images/apo.xyz", "w")
+
         img_counter = -1
+
         for i in range(n_steps):
             
             #Calculate the gradient
             self.calc_gradient()
             self.accumulate_gradient()
 
+            #Print images
+            if i%img_stride == 0:
+                # os.system(f"./gradcv.out {img_counter} -gen -no > /dev/null 2>&1")
+                # os.system(f"mv data/images/Icalc_{img_counter}.txt \
+                #     data/gd_images/gd_image_{-img_counter-1}.txt")
+                img_counter -=1
+
+                self.write_frame(self.system_atoms, -img_counter-1, "data/gd_images/traj.xyz")
+
             #Update the coordinates
             self.system_atoms -= alpha * self.grad
 
-            #Print images
-            if i%img_stride == 0:
-                os.system(f"./gradcv.out {img_counter} -gen -no > /dev/null 2>&1")
-                os.system(f"mv data/images/Icalc_{img_counter}.txt \
-                    data/gd_images/gd_image_{-img_counter-1}.txt")
-                img_counter -=1
+            RMSD = rmsd(self.ref_coords.T, self.system_atoms, self.n_atoms)
+            print(RMSD)
+            if RMSD < tol:
+                print(f"Gradient descent reached convergence at the {i} step")
+                return 0
+
+    def write_frame(self, coords, index, file, write_type="a"):
+
+        if index==0:
+            if os.path.exists("data/gd_images/traj.xyz"):
+                os.system("mv data/gd_images/traj.xyz data/gd_images/#traj.xyz.bak#")
+
+            os.system("touch data/gd_images/traj.xyz")
+
+        #Construct the dataframe
+        char = ["CA" for i in range(self.n_atoms)]
+
+        df = pd.DataFrame()
+        df["Atoms"] = char
+        df["X"] = coords[0]
+        df["Y"] = coords[1]
+        df["Z"] = coords[2]
+
+        with open(file, write_type) as f:
+            f.write(f"{self.n_atoms}\n{index}\n") 
+            df.to_csv(f, header=None, index=None, sep="\t", mode="a")
 
  
 def main():
@@ -172,11 +205,12 @@ def main():
     n_proc = args.n_proc
     n_img = args.n_img
     ref_pdb = "data/input/" + args.ref_pdb
-    #system_pdb = "data/input/" + args.system_pdb
-    system_pdb = "random"
+
+    if args.system_pdb != "random": system_pdb = "data/input/" + args.system_pdb    
+    else: system_pdb = "random"
 
     opt = optimizer(n_proc, n_img, ref_pdb, system_pdb)
-    opt.grad_descent(100, 1000, 2)
+    opt.grad_descent(100, 1e5, 1)
 
 
 if __name__ == '__main__':
