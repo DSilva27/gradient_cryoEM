@@ -59,7 +59,7 @@ class optimizer:
         ref_coords = self.ref_universe.select_atoms('name CA').positions - \
                      self.ref_universe.atoms.center_of_mass()
 
-        random_coords = ref_coords + 5*np.random.normal(0, 1, ref_coords.shape)
+        random_coords = ref_coords + np.random.normal(0, 1, ref_coords.shape)
 
         self.n_atoms = ref_coords.shape[0]
         self.system_atoms = random_coords.T
@@ -161,7 +161,7 @@ class optimizer:
             self.system_atoms -= alpha * self.grad
 
             RMSD = rmsd(self.ref_coords.T, self.system_atoms, self.n_atoms)
-            print(RMSD)
+            #print(RMSD, self.s_cv)
             if RMSD < tol:
                 print(f"Gradient descent reached convergence at the {i} step")
                 return 0
@@ -210,7 +210,7 @@ def main():
     else: system_pdb = "random"
 
     opt = optimizer(n_proc, n_img, ref_pdb, system_pdb)
-    opt.grad_descent(100, 1e5, 1)
+    opt.grad_descent(1000, 1e5, 1)
 
 
 if __name__ == '__main__':

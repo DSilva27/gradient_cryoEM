@@ -411,6 +411,8 @@ void Grad_cv::calc_I_and_grad(){
     grad_y[i] = gcr * (grad_y[i]/s_cv - grad_Iy[i]/Ie_c);
   }
 
+  s_cv = gcr;
+
   std::cout << "Gradient: " << grad_x[0] << std::endl;
 }
 
