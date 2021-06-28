@@ -62,17 +62,11 @@ void Grad_cv::init_variables(std::string pf, std::string cf,
     grad_y = (myfloat_t*) malloc(sizeof(myfloat_t) * n_atoms);
     grad_z = (myfloat_t*) malloc(sizeof(myfloat_t) * n_atoms);
 
-    grad_Ix = (myfloat_t*) malloc(sizeof(myfloat_t) * n_atoms);
-    grad_Iy = (myfloat_t*) malloc(sizeof(myfloat_t) * n_atoms);
-
     for (int i=0; i<n_atoms; i++){
 
       grad_x[i] = 0;
       grad_y[i] = 0;
       grad_z[i] = 0;
-
-      grad_Ix[i] = 0;
-      grad_Iy[i] = 0;
     }
     std::cout << "Variables initialized" << std::endl;
 
@@ -374,18 +368,48 @@ void Grad_cv::calc_I_and_grad(){
       for (int j=0; j<number_pixels; j++){ 
         
         Icalc[i][j] += g_x[i] * g_y[j];
-        s1 += (x[i] - x_coord[atom]) * g_x[i] * g_y[j] * Iexp[i][j];
-        s2 += (y[j] - y_coord[atom]) * g_x[i] * g_y[j] * Iexp[i][j];
-        s3 += (x[i] - x_coord[atom]) * g_x[i] * g_y[j];
-        s4 += (y[j] - y_coord[atom]) * g_x[i] * g_y[j];
       }
     }
 
-    grad_x[atom] = s1; 
-    grad_y[atom] = s2; 
-    grad_Ix[atom] = s3;
-    grad_Iy[atom] = s4;
+    //Reset the vectors for the gaussians and selection
+    x_sel.clear(); y_sel.clear();
+    g_x = myvector_t(number_pixels, 0);
+    g_y = myvector_t(number_pixels, 0);
+  }
 
+  //myfloat_t norm = 1; 
+  myfloat_t norm = 1. / (2*M_PI * sigma_cv * sigma_cv * n_atoms);
+
+  //Calculate the gradient
+  for (int atom=0; atom<n_atoms; atom++){
+
+    //calculates the indices that satisfy |x - x_atom| <= sigma_reach*sigma
+    where(x, x_sel, x_coord[atom], sigma_reach * sigma_cv);
+    where(y, y_sel, y_coord[atom], sigma_reach * sigma_cv);
+
+    //calculate the gaussians
+    for (int i=0; i<x_sel.size(); i++){
+
+      g_x[x_sel[i]] = std::exp( -0.5 * (std::pow( (x[x_sel[i]] - x_coord[atom])/sigma_cv, 2 )) );
+    }
+
+    for (int i=0; i<y_sel.size(); i++){
+
+      g_y[y_sel[i]] = std::exp( -0.5 * (std::pow( (y[y_sel[i]] - y_coord[atom])/sigma_cv, 2 )) );
+    }
+
+    myfloat_t s1=0, s2=0;
+    //Calculate the image and the gradient
+    for (int i=0; i<number_pixels; i++){ 
+      for (int j=0; j<number_pixels; j++){ 
+        
+        s1 += (Icalc[i][j] * norm - Iexp[i][j]) * (x[i] - x_coord[atom]) * g_x[i] * g_y[j];
+        s2 += (Icalc[i][j] * norm - Iexp[i][j]) * (y[j] - y_coord[atom]) * g_x[i] * g_y[j];
+      }
+    }
+
+    grad_x[atom] = s1 * 2*norm / (sigma_cv * sigma_cv); 
+    grad_y[atom] = s2 * 2*norm / (sigma_cv * sigma_cv); 
 
     //Reset the vectors for the gaussians and selection
     x_sel.clear(); y_sel.clear();
@@ -394,26 +418,15 @@ void Grad_cv::calc_I_and_grad(){
   }
 
   for (int i=0; i<number_pixels; i++){ 
-    for (int j=0; j<number_pixels; j++){ 
-        
-      //Icalc[i][j] /= (2*M_PI * sigma_cv * sigma_cv);
-      Ie_c += Icalc[i][j];
-      Ie_e += Iexp[i][j];
+    for (int j=0; j<number_pixels; j++){     
+      Icalc[i][j] *= norm;
     }
   }
 
-  s_cv = -collective_variable();
-  myfloat_t gcr = -s_cv / (Ie_c * Ie_e);
-
-  for (int i=0; i<n_atoms; i++){
-    
-    grad_x[i] = gcr * (grad_x[i]/s_cv - grad_Ix[i]/Ie_c);
-    grad_y[i] = gcr * (grad_y[i]/s_cv - grad_Iy[i]/Ie_c);
-  }
-
-  s_cv = gcr;
-
-  std::cout << "Gradient: " << grad_x[0] << std::endl;
+  s_cv = collective_variable();
+  // std::cout.precision(5);
+  // std::cout << std::scientific << "Gradient: " << grad_x[0] << std::endl;
+  // std::cout << std::scientific << "CV: " << collective_variable() << std::endl;
 }
 
 void Grad_cv::calc_I(){
@@ -702,11 +715,11 @@ myfloat_t Grad_cv::collective_variable(){
   for (int i=0; i<number_pixels; i++){
     for (int j=0; j<number_pixels; j++){
 
-      s += Icalc[i][j] * Iexp[i][j];
+      s += (Icalc[i][j] - Iexp[i][j]) * (Icalc[i][j] - Iexp[i][j]);
     }
   }
   //Normalize cv (still have to normalize the gradient!)
-  return -s; // / (Icalc_sum * Iexp_sum);
+  return s; // / (Icalc_sum * Iexp_sum);
 }
 
 void Grad_cv::gradient(myvector_t &r, myvector_t &r_a, myvector_t &sgrad, const char *R){
@@ -805,7 +818,7 @@ void Grad_cv::gen_run(bool use_qt){
   // conv_proj_ctf();
   // std::cout << "... done" << std::endl;
 
-  if (use_qt) gaussian_normalization();
+  //if (use_qt) gaussian_normalization();
 
   print_image(Icalc, image_file);
   std::cout << "\n The calculated image (with ctf) was saved in " << image_file << std::endl;
