@@ -58,6 +58,25 @@ def calc_grad(parser):
     mygrad_calc.calc_gradient()
 
 
+def grad_desc(parser):
+
+    parser.add_argument("--n_proc", help="number of processors used. Default=1", default=1, type=int)
+    parser.add_argument("--n_img", help="number of images to be compared", required=True, type=int)
+    parser.add_argument("--ref_pdb", help="name of the reference (for alignment) pdb (do not include path)", required=True)
+    parser.add_argument("--system_pdb", help="name of the system pdb (do not include path)", required=True)
+    
+    #Gradient descent
+    parser.add_argument("--n_steps", help="max steps for gradient descent", default=100, type=int)
+    parser.add_argument("--learn_rate", help="learning rate for gradient descent", default=100, type=float)
+    parser.add_argument("--stride", help="stride for writing into traj file", default=1, type=int)
+    parser.add_argument("--tol", help="stop the descent if the change in the cv is less than tol", default=1e-3, type=float)
+
+    args = parser.parse_args()
+
+    mygrad_desc = GL.gradient_descent()
+    mygrad_desc.load_args(args)
+    mygrad_desc.grad_descent()
+
 def main():
 
     parser = argparse.ArgumentParser()
@@ -73,6 +92,9 @@ def main():
 
     elif args.program == "calc_grad":
         calc_grad(parser)
+
+    elif args.program == "grad_desc":
+        grad_desc(parser)
 
     else:
         raise NameError(args.program + " has not been defined. Please check the documentation.")

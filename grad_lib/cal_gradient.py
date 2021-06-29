@@ -30,10 +30,6 @@ def run_cpp(index):
         os.system(f"./gradcv.out {index} -grad > /dev/null 2>&1")
         return 1
 
-def rmsd(r1, r2, N):
-    R = np.sqrt(np.sum(np.sum((r1 - r2)**2, axis=0)) / N)
-
-    return R
 
 class gradient_calculator:
 
@@ -149,91 +145,3 @@ class gradient_calculator:
 
         if self.n_img > 1:
             self.write_results()
-
-    
-
-    ## \brief Perform gradient descent
-    # Longer description (TODO)
-    # \param n_steps How many steps of gradient descent will be done
-    # \param alpha Learning rate
-    # \param img_stride An image will be printed every img_stride steps
-    def grad_descent(self, n_steps, alpha, img_stride, tol=1.5):
-        
-        self.write_frame(self.ref_coords.T, 0, "data/gd_images/apo.xyz", "w")
-
-        img_counter = -1
-
-        for i in range(n_steps):
-            
-            #Calculate the gradient
-            self.calc_gradient()
-            self.accumulate_gradient()
-
-            #Print images
-            if i%img_stride == 0:
-                # os.system(f"./gradcv.out {img_counter} -gen -no > /dev/null 2>&1")
-                # os.system(f"mv data/images/Icalc_{img_counter}.txt \
-                #     data/gd_images/gd_image_{-img_counter-1}.txt")
-                img_counter -=1
-
-                self.write_frame(self.system_atoms, -img_counter-1, "data/gd_images/traj.xyz")
-
-            #Update the coordinates
-            self.system_atoms += alpha * self.grad
-
-            RMSD = rmsd(self.ref_coords.T, self.system_atoms, self.n_atoms)
-            print(RMSD)
-            #print(self.grad[0,0])
-            if RMSD < tol:
-                print(f"Gradient descent reached convergence at the {i} step")
-                return 0
-
-    def write_frame(self, coords, index, file, write_type="a"):
-
-        if index==0:
-            if os.path.exists("data/gd_images/traj.xyz"):
-                os.system("mv data/gd_images/traj.xyz data/gd_images/#traj.xyz.bak#")
-
-            os.system("touch data/gd_images/traj.xyz")
-
-        #Construct the dataframe
-        char = ["CA" for i in range(self.n_atoms)]
-
-        df = pd.DataFrame()
-        df["Atoms"] = char
-        df["X"] = coords[0]
-        df["Y"] = coords[1]
-        df["Z"] = coords[2]
-
-        with open(file, write_type) as f:
-            f.write(f"{self.n_atoms}\n{index}\n") 
-            df.to_csv(f, header=None, index=None, sep="\t", mode="a")
-
- 
-def main():
-
-
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument("--n_proc", help="number of processors used. Default=1", default=1, type=int)
-    parser.add_argument("--n_img", help="number of images to be compared", required=True, type=int)
-    parser.add_argument("--ref_pdb", help="name of the input pdb (do not include path)", required=True)
-    parser.add_argument("--system_pdb", 
-                        help="name of the system pdb in the current md_step pdb (do not include path)", 
-                        required=True)
-
-    args = parser.parse_args()
-    
-    n_proc = args.n_proc
-    n_img = args.n_img
-    ref_pdb = "data/input/" + args.ref_pdb
-
-    if args.system_pdb != "random": system_pdb = "data/input/" + args.system_pdb    
-    else: system_pdb = "random"
-
-    opt = gradient_calculator(n_proc, n_img, ref_pdb, system_pdb)
-    opt.grad_descent(100, 10, 1)
-
-
-if __name__ == '__main__':
-    main()
