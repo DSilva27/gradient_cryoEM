@@ -59,7 +59,8 @@ class Grad_cv {
   int number_pixels, number_pixels_fft_1d, sigma_reach, n_atoms;
   myfloat_t pixel_size, sigma_cv;
   myfloat_t b_factor, defocus, CTF_amp, phase, min_defocus, max_defocus;
-
+  myfloat_t norm;
+  
   myvector_t quat, quat_inv;
 
   //***************** Control for parameters
@@ -74,6 +75,7 @@ class Grad_cv {
   myfloat_t elecwavel = 0.019866;
   myfloat_t SNR = 1.0;
   myfloat_t sqrt_2pi = std::sqrt(2. * M_PI);
+  
 
 
   //Name of files used

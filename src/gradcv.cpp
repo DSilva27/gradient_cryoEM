@@ -73,6 +73,8 @@ void Grad_cv::init_variables(std::string pf, std::string cf,
     //#################### Read experimental image (includes defocus and quaternions) ###########################
     read_exp_img(image_file);
     phase = defocus * M_PI * 2. * 10000 * elecwavel;
+    
+    norm = 1. / (2*M_PI * sigma_cv*sigma_cv * n_atoms);
   }
 
   //######################### Preparing FFTWs and allocating memory for images and gradients ##################
@@ -347,8 +349,6 @@ void Grad_cv::calc_I_and_grad(){
   myvector_t g_x(number_pixels, 0.0);
   myvector_t g_y(number_pixels, 0.0);
 
-  myfloat_t norm = 1. / (2*M_PI * sigma_cv*sigma_cv * n_atoms);
-
   for (int atom=0; atom<n_atoms; atom++){
 
     //calculates the indices that satisfy |x - x_atom| <= sigma_reach*sigma
@@ -471,7 +471,7 @@ void Grad_cv::calc_I(){
   for (int i=0; i<Icalc.size(); i++){ 
     for (int j=0; j<Icalc[0].size(); j++){ 
         
-      Icalc[i][j] /= 2*M_PI * sigma_cv*sigma_cv * n_atoms;
+      Icalc[i][j] *= norm;
     }
   }
 }
