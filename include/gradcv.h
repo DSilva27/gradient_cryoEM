@@ -59,6 +59,7 @@ class Grad_cv {
   int number_pixels, number_pixels_fft_1d, sigma_reach, n_atoms;
   myfloat_t pixel_size, sigma_cv;
   myfloat_t b_factor, defocus, CTF_amp, phase, min_defocus, max_defocus;
+  myfloat_t norm;
 
   myvector_t quat, quat_inv;
 

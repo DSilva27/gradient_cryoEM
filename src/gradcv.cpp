@@ -87,6 +87,7 @@ void Grad_cv::init_variables(std::string pf, std::string cf,
   
   //Turn Icalc into a number_pixels x number_pixels matrix and fill it with zeros
   Icalc = mymatrix_t(number_pixels, myvector_t(number_pixels, 0));
+  norm = 1. / (2. * M_PI * sigma_cv * sigma_cv * n_atoms);   
 }
 
 void Grad_cv::read_coord(){
@@ -396,7 +397,7 @@ void Grad_cv::calc_I_and_grad(){
   for (int i=0; i<number_pixels; i++){ 
     for (int j=0; j<number_pixels; j++){ 
         
-      //Icalc[i][j] /= (2*M_PI * sigma_cv * sigma_cv);
+      Icalc[i][j] *= norm
       Ie_c += Icalc[i][j];
       Ie_e += Iexp[i][j];
     }
@@ -407,8 +408,8 @@ void Grad_cv::calc_I_and_grad(){
 
   for (int i=0; i<n_atoms; i++){
     
-    grad_x[i] = gcr * (grad_x[i]/s_cv - grad_Ix[i]/Ie_c);
-    grad_y[i] = gcr * (grad_y[i]/s_cv - grad_Iy[i]/Ie_c);
+    grad_x[i] = gcr * (grad_x[i]/s_cv - grad_Ix[i]/Ie_c) * norm;
+    grad_y[i] = gcr * (grad_y[i]/s_cv - grad_Iy[i]/Ie_c) * norm;
   }
 
   s_cv = gcr;
@@ -491,7 +492,7 @@ void Grad_cv::calc_I(){
   for (int i=0; i<Icalc.size(); i++){ 
     for (int j=0; j<Icalc[0].size(); j++){ 
         
-      Icalc[i][j] /= 2. * M_PI * sigma_cv * sigma_cv * n_atoms;     
+      Icalc[i][j] *= norm;
     }
   }
 }
