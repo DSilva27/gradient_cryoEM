@@ -109,6 +109,20 @@ class gradient_calculator:
             self.grad += g
 
 
+    def write_results(self):
+
+        res_dict = {
+            "s" : self.s_cv,
+            "sgrad_x": self.grad[0].tolist(),
+            "sgrad_y": self.grad[1].tolist(),
+            "sgrad_z": self.grad[2].tolist(),
+        }
+
+        #print(self.grad[0])
+        with open("data/output/grad_all.json", "w") as json_file:
+            json.dump(res_dict, json_file, indent=4)
+
+
     def calc_gradient(self):
 
         # Save the coordinates
@@ -133,7 +147,11 @@ class gradient_calculator:
 
         self.accumulate_gradient()
 
-        
+        if self.n_img > 1:
+            self.write_results()
+
+    
+
     ## \brief Perform gradient descent
     # Longer description (TODO)
     # \param n_steps How many steps of gradient descent will be done
