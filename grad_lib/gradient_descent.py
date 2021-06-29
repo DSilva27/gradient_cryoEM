@@ -35,31 +35,40 @@ def rmsd(r1, r2, N):
 
     return R
 
-class optimizer:
+class gradient_descent:
 
-    def __init__(self, n_proc, n_img, ref_pdb, system_pdb):
+    def __init__(self):
+        pass
 
-        self.n_proc = n_proc
-        self.n_img = n_img
-        self.ref_pdb = ref_pdb
+    def load_args(self, args):
+
+        self.n_proc = args.n_proc
+        self.n_img = args.n_img
+        self.ref_pdb = "data/input/" + args.ref_pdb
         
         self.ref_universe = mda.Universe(self.ref_pdb)
 
-        if system_pdb == "random":
+        if args.system_pdb == "random":
             self.gen_random_system()
         
         else:
-            self.system_pdb = system_pdb
+            self.system_pdb = "data/input/" + args.system_pdb
             self.system_universe = mda.Universe(self.system_pdb)
             self.align_system()
-        
+
+        #For gradient descent
+        self.n_steps = args.n_steps
+        self.alpha = args.learn_rate
+        self.stride = args.stride
+        self.tol = args.tol
+    
         
     def gen_random_system(self):
 
         ref_coords = self.ref_universe.select_atoms('name CA').positions - \
                      self.ref_universe.atoms.center_of_mass()
 
-        random_coords = ref_coords + 2*np.random.normal(0, 1, ref_coords.shape)
+        random_coords = ref_coords + np.random.normal(0, 1, ref_coords.shape)
 
         self.n_atoms = ref_coords.shape[0]
         self.system_atoms = random_coords.T
@@ -91,8 +100,7 @@ class optimizer:
         # Rotate the coordinates
         self.system_atoms = np.dot(rot_mat, system_atoms.T)
         self.n_atoms = self.system_atoms.shape[1]
-        print(self.system_atoms.shape)
-
+        
 
     def accumulate_gradient(self):
 
@@ -104,6 +112,20 @@ class optimizer:
             s, g = read_grads(i)
             self.s_cv += s
             self.grad += g
+
+
+    def write_results(self):
+
+        res_dict = {
+            "s" : self.s_cv,
+            "sgrad_x": self.grad[0].tolist(),
+            "sgrad_y": self.grad[1].tolist(),
+            "sgrad_z": self.grad[2].tolist(),
+        }
+
+        #print(self.grad[0])
+        with open("data/output/grad_all.json", "w") as json_file:
+            json.dump(res_dict, json_file, indent=4)
 
 
     def calc_gradient(self):
@@ -128,42 +150,45 @@ class optimizer:
         #print("... done. Run time: {}".format(time.time() - start))
         p.close()
 
-        #self.accumulate_gradient()
+        self.accumulate_gradient()
 
-        
+        if self.n_img > 1:
+            self.write_results()
+
+    
+
     ## \brief Perform gradient descent
     # Longer description (TODO)
     # \param n_steps How many steps of gradient descent will be done
     # \param alpha Learning rate
     # \param img_stride An image will be printed every img_stride steps
-    def grad_descent(self, n_steps, alpha, img_stride, tol=1.5):
+    def grad_descent(self):
         
         self.write_frame(self.ref_coords.T, 0, "data/gd_images/apo.xyz", "w")
+        self.write_frame(self.system_atoms, 0, "data/gd_images/traj.xyz")
+        counter = 1
 
-        img_counter = -1
-
-        for i in range(n_steps):
+        for i in range(self.n_steps):
             
             #Calculate the gradient
             self.calc_gradient()
             self.accumulate_gradient()
-            
+
             #Update the coordinates
-            self.system_atoms -= alpha * self.grad
+            self.system_atoms += self.alpha * self.grad
+            
+            #Print images
+            if i%self.stride == 0:
+                # os.system(f"./gradcv.out {} -gen -no > /dev/null 2>&1")
+                # os.system(f"mv data/images/Icalc_{img_counter}.txt \
+                #     data/gd_images/gd_image_{-img_counter-1}.txt")
+                self.write_frame(self.system_atoms, counter, "data/gd_images/traj.xyz")
+                counter +=1
 
             RMSD = rmsd(self.ref_coords.T, self.system_atoms, self.n_atoms)
-
-            #Print images
-            if i%img_stride == 0:
-                os.system(f"./gradcv.out {img_counter} -gen -no > /dev/null 2>&1")
-                os.system(f"mv data/images/Icalc_{img_counter}.txt \
-                     data/gd_images/gd_image_{-img_counter-1}.txt")
-                img_counter -=1
-
-                self.write_frame(self.system_atoms, -img_counter-1, "data/gd_images/traj.xyz")
-                print(RMSD, self.s_cv)
-
-            if RMSD < tol:
+            print(RMSD)
+            #print(self.grad[0,0])
+            if RMSD < self.tol:
                 print(f"Gradient descent reached convergence at the {i} step")
                 return 0
 
@@ -210,8 +235,8 @@ def main():
     if args.system_pdb != "random": system_pdb = "data/input/" + args.system_pdb    
     else: system_pdb = "random"
 
-    opt = optimizer(n_proc, n_img, ref_pdb, system_pdb)
-    opt.grad_descent(10000, 100, 100)
+    opt = gradient_descent(n_proc, n_img, ref_pdb, system_pdb)
+    opt.grad_descent(100, 10, 1)
 
 
 if __name__ == '__main__':
