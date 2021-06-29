@@ -82,6 +82,30 @@ python emgrad.py calc_grad --n_proc N_PROC --n_img N_IMG --ref_pdb REF_PDB --sys
 
 
 ```
+
+### Main steps for doing a gradient descent run (same develop branch)
+
+* Place the structural pdb (from MD) in data/input/ (e.g. system.pdb)
+* The default here is to calculate the gradient just with respect to the C-alpha atoms (but this can be changed)
+
+```
+#Activate the previous conda env (if not activated)
+conda activate em2d_env
+
+# Run main code to calculate the gradient 
+# REF_PDB and SYSTEM_PDB should be in data/input
+python emgrad.py grad_desc --n_proc N_PROC --n_img N_IMG --ref_pdb REF_PDB --system_pdb SYSTEM_PDB
+
+```
+
+#### Additional flags
+* n_steps: maximum number of steps for the descent (default=100)
+* learn_rate: learning rate for the descent (default=100)
+* stride: stride for writing into trajectory file (default=1)
+* tol: stop the descent if the change in the cv is less than this value
+
+
+
 ### Output Files
 When generating images: 
 * data/input/parameters.txt: Parameters used to generate the synthetic images.
@@ -91,3 +115,7 @@ When calculating the gradient:
 * data/input/coord.txt : aligned coordinates of system with reference structure.
 * data/output/grad_??.json: jason files with gradients
 * data/output/grad_all.json: file that has the accumulation of all the gradient (if multiple images are used)
+
+When doing gradient descent (TODO: change folder name): 
+* data/gd_images/traj.xyz : trajectory of the descent 
+* data/gd_image/apo.xyz : reference structure (TODO: change name)
