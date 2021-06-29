@@ -25,6 +25,7 @@ Most of these methods are based on the ones already implemented in BioEM [1]. Fo
      -> point environment variable $FFTW_ROOT to a FFTW3 installation or use ccmake to specify
 
 * conda (optional): a package and virtual environment manager for python. https://docs.conda.io/en/latest/miniconda.html
+* MDAnalysis: a Python library for the analysis of computer simulations of many-body systems at the molecular scale.
 * At least g++ 9.3.0 or a compiler that let's you use C++17 (change Makefile if not using g++, Cmake has not been implemented yet)
 
 ### Main steps for cloning and installation (only once)
@@ -57,11 +58,13 @@ If you get the error `CommandNotFoundError: Your shell has not been properly con
 conda activate em2d_env
 
 #Create input parameters for images (e.g., number of pixels, pixel size etc).  You should edit python/prep_parameters.py to set your own parameters
-python python/prep_input_files.py
+python emgrad.py set_params -np NUMBER_PIXELS -ps PIXEL_SIZE -s SIGMA -nc NEIGHBOR_CUTOFF 
+
+#The parameters file is saved in data/input/parameters.txt, if you want new parameters you can change it directly or re-run the command
 
 #Generate images in parallel (reference pdb MUST be in the data/input, otherwise it wont work)
 # Example REF_PDB=apo.pdb that is in data/input (no need to include directory address)
-python python/gen_images.py --n_proc N_PROC --n_img N_IMG --ref_pdb REF_PDB
+python gen_db --n_proc N_PROC --n_img N_IMG --ref_pdb REF_PDB
 ```
 
 ### Main steps for calculating the gradient (same develop branch)
@@ -75,11 +78,8 @@ conda activate em2d_env
 
 # Run main code to calculate the gradient 
 # REF_PDB and SYSTEM_PDB should be in data/input
-python python/cal_gradient.py --n_proc N_PROC --n_img N_IMG --ref_pdb REF_PDB --system_pdb SYSTEM_PDB
+python emgrad.py calc_grad --n_proc N_PROC --n_img N_IMG --ref_pdb REF_PDB --system_pdb SYSTEM_PDB
 
-### MISSING:
-### Gathering gradients and rotating them to the reference space
-python python/process_gradient.py --n_img N_IMG --n_atoms N_ATOMS
 
 ```
 ### Output Files
@@ -90,4 +90,4 @@ When generating images:
 When calculating the gradient:
 * data/input/coord.txt : aligned coordinates of system with reference structure.
 * data/output/grad_??.json: jason files with gradients
-* MISSING: file that had rotated gradients to put them all in the same reference space
+* data/output/grad_all.json: file that has the accumulation of all the gradient (if multiple images are used)
