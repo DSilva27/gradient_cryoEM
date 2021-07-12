@@ -64,7 +64,7 @@ python emgrad.py set_params -np NUMBER_PIXELS -ps PIXEL_SIZE -s SIGMA -nc NEIGHB
 
 #Generate images in parallel (reference pdb MUST be in the data/input, otherwise it wont work)
 # Example REF_PDB=apo.pdb that is in data/input (no need to include directory address)
-python gen_db --n_proc N_PROC --n_img N_IMG --ref_pdb REF_PDB
+python emgrad.py gen_db --n_proc N_PROC --n_img N_IMG --ref_pdb REF_PDB
 ```
 
 ### Main steps for calculating the gradient (same develop branch)
