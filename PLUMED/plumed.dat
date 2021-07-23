@@ -1,0 +1,10 @@
+LOAD FILE=emgrad.cpp
+
+# Here's coordination of a group against itself
+ss: SECONDSPHERE SPECIES=1-108 BEAD={GAUSSIAN LOWER=2 UPPER=4 SMEAR=1} between={GAUSSIAN LOWER=57 UPPER=59 SMEAR=1}
+ssn: SECONDSPHERE SPECIES=1-108 BEAD={GAUSSIAN LOWER=2 UPPER=4 SMEAR=1} between={GAUSSIAN LOWER=57 UPPER=59 SMEAR=1} NUMERICAL_DERIVATIVES
+
+# print the colvar and its derivatives
+PRINT ARG=ss.* FILE=colvar FMT=%8.4f 
+DUMPDERIVATIVES ARG=ss.*,ssn.* FILE=deriv FMT=%8.4f
+
