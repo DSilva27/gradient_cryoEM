@@ -10,6 +10,7 @@ int main(int argc, char* argv[]){
   param_file = "parameters.txt";
   coord_file = "coord.txt";
 
+  std::cout << argc << std::endl;
   out_im_file = "Icalc_" + std::to_string(std::atoi(argv[1])) + ".txt";
   out_json_file = "grad_" + std::to_string(std::atoi(argv[1])) + ".json";
 

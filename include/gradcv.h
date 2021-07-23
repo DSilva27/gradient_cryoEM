@@ -120,12 +120,17 @@ public:
                       const char *);
   void prepare_FFTs();
 
-  void read_coord();
+  void read_coord(myvector_t &, myvector_t &, myvector_t &);
   void center_coord(myvector_t &, myvector_t &, myvector_t &);
   void quaternion_rotation(myvector_t &, myvector_t &, myvector_t &, myvector_t &);
   void quaternion_rotation(myvector_t &, myfloat_t*, myfloat_t*, myfloat_t*);
 
-  void calc_I_and_grad();
+  void calc_I_and_grad(myvector_t &, myvector_t &, myvector_t &, 
+  mymatrix_t &, myfloat_t *, myfloat_t *);
+
+  void grad_nocutoff(myvector_t &, myvector_t &, myvector_t &, 
+  mymatrix_t &, myfloat_t *, myfloat_t *);
+
   void calc_I();
   void calc_ctf(mycomplex_t*);
   void conv_proj_ctf();
@@ -133,7 +138,7 @@ public:
   void I_with_noise(mymatrix_t &, myfloat_t);
   void gaussian_normalization();
   myfloat_t collective_variable();
-  void gradient(myvector_t &, myvector_t &, myvector_t &, const char *);
+
   void grad_run();
   void gen_run(bool);
 
@@ -142,6 +147,8 @@ public:
 
   void where(myvector_t &, std::vector<size_t> &, myfloat_t, myfloat_t);
   void where(myvector_t &, myvector_t &, std::vector<int> &, myfloat_t);
+
+  void gauss_calc(myvector_t &, myvector_t &, myfloat_t, myfloat_t);
 
   void matmul(mymatrix_t &, mymatrix_t &, mymatrix_t &);
   void transpose(mymatrix_t &, mymatrix_t &);

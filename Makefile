@@ -1,6 +1,6 @@
 IDIR = include
 CC = g++
-CFLAGS = -std=c++17 -O3 -I$(IDIR) -lm -lfftw3f 
+CFLAGS = -g -std=c++17 -O3 -I$(IDIR) -lm -lfftw3f 
 
 SDIR = src
 
@@ -16,4 +16,4 @@ gradcv.out: $(SRC) $(OBJ)
 .PHONY: clean
 
 clean:
-	rm -f $(ODIR)/*.o *~ core $(INCDIR)/*~ 
+	rm gradcv.out
