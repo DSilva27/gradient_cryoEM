@@ -30,13 +30,14 @@ class EmGrad : public Colvar {
   mymatrix_t Icalc;
   mymatrix_t Iexp;
   
-  std::vector<Vector> emgrad_der;
+  std::vector<Vector> pos, emgrad_der;
   myfloat_t s_cv;
   
   void read_coord(myvector_t &, myvector_t &, myvector_t &, myfloat_t &);
   void arange(myvector_t &, myfloat_t, myfloat_t, myfloat_t);
   void where(myvector_t &, std::vector<size_t> &, myfloat_t, myfloat_t);
   void read_exp_img(std::string); 
+  void quaternion_rotation(myvector_t &, std::vector<Vector> &);
   void calc_I_and_grad(); 
 
  public:
@@ -106,6 +107,59 @@ EmGrad::EmGrad(const ActionOptions&ao):
 
   read_exp_img(IMG_file);
   norm = 1. / (2*M_PI * sigma*sigma * n_atoms);
+
+  pos = getPositions();
+}
+
+void EmGrad::quaternion_rotation(myvector_t &q, std::vector<Vector> &P){
+
+/**
+ * @brief Rotates a biomolecule using the quaternions rotation matrix
+ *        according to (https://en.wikipedia.org/wiki/Rotation_matrix#Quaternion)
+ * 
+ * @param q vector that stores the parameters for the rotation myvector_t (4)
+ * @param x_data original coordinates x
+ * @param y_data original coordinates y
+ * @param z_data original coordinates z
+ * @param x_r stores the rotated values x
+ * @param y_r stores the rotated values x
+ * @param z_r stores the rotated values x
+ * 
+ * @return void
+ * 
+ */
+
+  //Definition of the quaternion rotation matrix 
+
+  myfloat_t q00 = 1 - 2*std::pow(q[1],2) - 2*std::pow(q[2],2);
+  myfloat_t q01 = 2*q[0]*q[1] - 2*q[2]*q[3];
+  myfloat_t q02 = 2*q[0]*q[2] + 2*q[1]*q[3];
+  myvector_t q0{ q00, q01, q02 };
+  
+  myfloat_t q10 = 2*q[0]*q[1] + 2*q[2]*q[3];
+  myfloat_t q11 = 1 - 2*std::pow(q[0],2) - 2*std::pow(q[2],2);
+  myfloat_t q12 = 2*q[1]*q[2] - 2*q[0]*q[3];
+  myvector_t q1{ q10, q11, q12 };
+
+  myfloat_t q20 = 2*q[0]*q[2] - 2*q[1]*q[3];
+  myfloat_t q21 = 2*q[1]*q[2] + 2*q[0]*q[3];
+  myfloat_t q22 = 1 - 2*std::pow(q[0],2) - 2*std::pow(q[1],2);
+  myvector_t q2{ q20, q21, q22};
+
+  mymatrix_t Q{ q0, q1, q2 };
+
+  myfloat_t x_tmp, y_tmp, z_tmp;
+
+  for (unsigned int i=0; i<n_atoms; i++){
+
+    x_tmp = P[i][0]*Q[0][0] + P[i][1]*Q[0][1] + P[i][2]*Q[0][2];
+    y_tmp = P[i][0]*Q[1][0] + P[i][1]*Q[1][1] + P[i][2]*Q[1][2];
+    z_tmp = P[i][0]*Q[2][0] + P[i][1]*Q[2][1] + P[i][2]*Q[2][2];
+
+    P[i][0] = x_tmp;
+    P[i][1] = y_tmp;
+    P[i][2] = z_tmp;
+  }
 }
 
 void EmGrad::arange(myvector_t &out_vec, myfloat_t xo, myfloat_t xf, myfloat_t dx){
@@ -233,8 +287,6 @@ void EmGrad::calc_I_and_grad(){
   myvector_t g_x(n_pixels, 0.0);
   myvector_t g_y(n_pixels, 0.0);
 
-  auto pos = getPositions();
-
   for (int atom=0; atom<n_atoms; atom++){
 
     //calculates the indices that satisfy |x - x_atom| <= cutoff*sigma
@@ -323,6 +375,7 @@ void EmGrad::calculate() {
 
   if(pbc) makeWhole();
 
+  quaternion_rotation(quat, pos);
   calc_I_and_grad();
   
   for(unsigned i=0; i<getNumberOfAtoms(); i++) setAtomsDerivatives(i, emgrad_der[i]);
