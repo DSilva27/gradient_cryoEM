@@ -6,6 +6,7 @@
 #include <string>
 #include <cmath>
 #include <algorithm>
+#include <fstream>
 
 typedef double myfloat_t;
 typedef myfloat_t mycomplex_t[2];
@@ -20,12 +21,23 @@ class EmGrad : public Colvar {
 
  private:
   bool pbc;
-  myfloat_t sigma, cutoff, pixel_size;
-  int n_pixels;
+  myfloat_t sigma, cutoff, pixel_size, defocus, norm;
+  int n_pixels, n_atoms;
+
+  myvector_t quat, quat_inv;
+
+  myvector_t x_grid, y_grid;
+  mymatrix_t Icalc;
+  mymatrix_t Iexp;
+  
+  std::vector<Vector> emgrad_der;
+  myfloat_t s_cv;
   
   void read_coord(myvector_t &, myvector_t &, myvector_t &, myfloat_t &);
   void arange(myvector_t &, myfloat_t, myfloat_t, myfloat_t);
   void where(myvector_t &, std::vector<size_t> &, myfloat_t, myfloat_t);
+  void read_exp_img(std::string); 
+  void calc_I_and_grad(); 
 
  public:
   static void registerKeywords( Keywords& keys );
@@ -43,6 +55,7 @@ void EmGrad::registerKeywords( Keywords& keys ) {
   keys.add("compulsory","CUTOFF","Neighbor cutoff.");
   keys.add("compulsory","N_PIXELS","Number of pixels for projection.");
   keys.add("compulsory","PIXEL_SIZE","Size of each pixel.");
+  keys.add("compulsory", "IMG_FILE", "File with experimental images");
 }
 
 EmGrad::EmGrad(const ActionOptions&ao):
@@ -59,6 +72,9 @@ EmGrad::EmGrad(const ActionOptions&ao):
   parse("N_PIXELS",n_pixels);
   parse("PIXEL_SIZE",pixel_size);
 
+  std::string IMG_file;
+  parse("IMG_FILE", IMG_file);
+
   bool nopbc=!pbc;
   parseFlag("NOPBC",nopbc);
   pbc=!nopbc;
@@ -69,15 +85,27 @@ EmGrad::EmGrad(const ActionOptions&ao):
   log.printf("\n");
   log.printf("  standard deviation for gaussians : %1f\n", sigma);
   log.printf("  neighbor list cutoff : %lf\n", cutoff);
+  log.printf("  Image file : %s\n", IMG_file.c_str());
   
   if(pbc) log.printf("  using periodic boundary conditions\n");
   else    log.printf("  without periodic boundary conditions\n");
 
   // log << " Bibliography" << plumed.cite("Bonomi, Camilloni, Bioinformatics, 33, 3999 (2017)") << "\n";
 
+  
+
   addValueWithDerivatives();
   setNotPeriodic();
   requestAtoms(atoms);
+
+  n_atoms = getNumberOfAtoms();
+  emgrad_der.resize(n_atoms);
+  Icalc = mymatrix_t(n_pixels, myvector_t(n_pixels, 0));
+  Iexp = mymatrix_t(n_pixels, myvector_t(n_pixels, 0));
+  quat = myvector_t(n_pixels, 0);
+
+  read_exp_img(IMG_file);
+  norm = 1. / (2*M_PI * sigma*sigma * n_atoms);
 }
 
 void EmGrad::arange(myvector_t &out_vec, myfloat_t xo, myfloat_t xf, myfloat_t dx){
@@ -129,42 +157,177 @@ void EmGrad::where(myvector_t &inp_vec, std::vector<size_t> &out_vec,
     }
 }
 
+void EmGrad::read_exp_img(std::string fname){
+
+  
+  std::ifstream file;
+  file.open(fname);
+
+  if (!file.good()){
+    error("The file " + fname + " does not exist");
+  }
+
+  //Read defocus
+  file >> defocus;
+  
+  //Read quaternions
+  for (int i=0; i<4; i++) file >> quat[i];
+
+    //Create inverse quat
+  quat_inv = myvector_t(4, 0);
+
+  float quat_abs = quat[0]*quat[0] + 
+                   quat[1]*quat[1] +
+                   quat[2]*quat[2] +
+                   quat[3]*quat[3];
+
+  quat_inv[0] = -quat[0] / quat_abs;
+  quat_inv[1] = -quat[1] / quat_abs;
+  quat_inv[2] = -quat[2] / quat_abs;
+  quat_inv[3] =  quat[3] / quat_abs;
+
+  //Read image
+  for (int i=0; i<n_pixels; i++){
+    for (int j=0; j<n_pixels; j++){
+
+      file >> Iexp[i][j];
+    }
+  }
+}
+
+void EmGrad::calc_I_and_grad(){
+
+  /**
+   * @brief Calculates the image from the 3D model by representing the atoms as gaussians and using a 2d Grid
+   * 
+   * @param x_coord original coordinates x
+   * @param y_coord original coordinates y
+   * @param z_coord original coordinates z
+   * @param sigma standard deviation for the gaussians, equal for all the atoms  (myfloat_t)
+   * @paramcutoffnumber of sigmas used for cutoff (int)
+   * @param n_pixels Resolution of the calculated image
+   * @param Icalc Matrix used to store the calculated image
+   * @param x values in x for the grid
+   * @param y values in y for the grid
+   * 
+   * @return void
+   * 
+   */
+
+  //Calculate minimum and maximum values for the linspace-like vectors x and y
+  myfloat_t min = -pixel_size * (n_pixels + 1)*0.5;
+  myfloat_t max = pixel_size * (n_pixels - 3)*0.5 + pixel_size;
+
+  //Assign memory space required to fill the vectors
+  x_grid.resize(n_pixels); y_grid.resize(n_pixels);
+
+  //Generate them
+  arange(x_grid, min, max, pixel_size);
+  arange(y_grid, min, max, pixel_size);
+
+  //Vectors used for masked selection of coordinates
+  std::vector <size_t> x_sel;
+  std::vector <size_t> y_sel;
+
+  //Vectors to store the values of the gaussians
+  myvector_t g_x(n_pixels, 0.0);
+  myvector_t g_y(n_pixels, 0.0);
+
+  auto pos = getPositions();
+
+  for (int atom=0; atom<n_atoms; atom++){
+
+    //calculates the indices that satisfy |x - x_atom| <= cutoff*sigma
+    where(x_grid, x_sel, pos[atom][0], cutoff * sigma);
+    where(y_grid, y_sel, pos[atom][1], cutoff * sigma);
+
+    //calculate the gaussians
+    for (int i=0; i<x_sel.size(); i++){
+
+      g_x[x_sel[i]] = std::exp( -0.5 * (std::pow( (x_grid[x_sel[i]] - pos[atom][0])/sigma, 2 )) );
+    }
+
+    for (int i=0; i<y_sel.size(); i++){
+
+      g_y[y_sel[i]] = std::exp( -0.5 * (std::pow( (y_grid[y_sel[i]] - pos[atom][1])/sigma, 2 )) );
+    }
+
+    myfloat_t s1=0, s2=0, s3=0, s4=0;
+    //Calculate the image and the gradient
+    for (int i=0; i<n_pixels; i++){ 
+      for (int j=0; j<n_pixels; j++){ 
+        
+        Icalc[i][j] += g_x[i] * g_y[j];
+      }
+    }
+
+    //Reset the vectors for the gaussians and selection
+    x_sel.clear(); y_sel.clear();
+    g_x = myvector_t(n_pixels, 0);
+    g_y = myvector_t(n_pixels, 0);
+  }
+
+  //myfloat_t norm = 1; 
+  myfloat_t norm = 1. / (2*M_PI * sigma * sigma * n_atoms);
+
+  //Calculate the gradient
+  for (int atom=0; atom<n_atoms; atom++){
+
+    //calculates the indices that satisfy |x - x_atom| <= cutoff*sigma
+    where(x_grid, x_sel, pos[atom][0], cutoff * sigma);
+    where(y_grid, y_sel, pos[atom][1], cutoff * sigma);
+
+    //calculate the gaussians
+    for (int i=0; i<x_sel.size(); i++){
+
+      g_x[x_sel[i]] = std::exp( -0.5 * (std::pow( (x_grid[x_sel[i]] - pos[atom][0])/sigma, 2 )) );
+    }
+
+    for (int i=0; i<y_sel.size(); i++){
+
+      g_y[y_sel[i]] = std::exp( -0.5 * (std::pow( (y_grid[y_sel[i]] - pos[atom][1])/sigma, 2 )) );
+    }
+
+    myfloat_t s1=0, s2=0;
+    //Calculate the image and the gradient
+    for (int i=0; i<n_pixels; i++){ 
+      for (int j=0; j<n_pixels; j++){ 
+        
+        s1 += (Icalc[i][j] * norm - Iexp[i][j]) * (x_grid[i] - pos[atom][0]) * g_x[i] * g_y[j];
+        s2 += (Icalc[i][j] * norm - Iexp[i][j]) * (y_grid[j] - pos[atom][1]) * g_x[i] * g_y[j];
+      }
+    }
+
+    emgrad_der[atom][0] = s1 * 2*norm / (sigma * sigma); 
+    emgrad_der[atom][1] = s2 * 2*norm / (sigma * sigma); 
+
+    //Reset the vectors for the gaussians and selection
+    x_sel.clear(); y_sel.clear();
+    g_x = myvector_t(n_pixels, 0);
+    g_y = myvector_t(n_pixels, 0);
+  }
+
+  s_cv = 0;
+  for (int i=0; i<n_pixels; i++){ 
+    for (int j=0; j<n_pixels; j++){     
+      Icalc[i][j] *= norm;
+
+      s_cv += (Icalc[i][j] - Iexp[i][j]) * (Icalc[i][j] - Iexp[i][j]);
+    }
+  }
+
+}
 
 // calculator
 void EmGrad::calculate() {
 
   if(pbc) makeWhole();
 
+  calc_I_and_grad();
   
-  myvector_t x, y;
-
-  myfloat_t min = -pixel_size * (n_pixels + 1)*0.5;
-  myfloat_t max = pixel_size * (n_pixels - 3)*0.5 + pixel_size;
-
-  //Assign memory space required to fill the vectors
-  x.resize(n_pixels); y.resize(n_pixels);
-
-  //Generate them
-  arange(x, min, max, pixel_size);
-
-  //Vectors used for masked selection of coordinates
-  // |x_atom - x_grid| < cutoff * sigma
-
-  myfloat_t neigh_total = 0;
-  myfloat_t n_atoms = getNumberOfAtoms();
-
-  for (int i=0; i<n_atoms; i++){
-    
-    std::vector <size_t> x_sel;
-    where(x, x_sel, getPosition(i)[0], cutoff * sigma);
-
-    neigh_total += x_sel.size();
-  }
-  
-  Vector distance=delta(getPosition(0),getPosition(1));
-  setAtomsDerivatives(0, 1 * distance);
+  for(unsigned i=0; i<getNumberOfAtoms(); i++) setAtomsDerivatives(i, emgrad_der[i]);
   setBoxDerivativesNoPbc();
-  setValue(neigh_total/n_atoms);
+  setValue(s_cv);
 }
 
 }
