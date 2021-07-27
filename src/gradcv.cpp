@@ -299,11 +299,17 @@ void Grad_cv::quaternion_rotation(myvector_t &q, myfloat_t* x_data,
 
   mymatrix_t Q{ q0, q1, q2 };
 
+  myfloat_t x_tmp, y_tmp, z_tmp;
+  
   for (unsigned int i=0; i<n_atoms; i++){
 
-    x_data[i] = x_data[i]*Q[0][0] + y_data[i]*Q[0][1] + z_data[i]*Q[0][2];
-    y_data[i] = x_data[i]*Q[1][0] + y_data[i]*Q[1][1] + z_data[i]*Q[1][2];
-    z_data[i] = x_data[i]*Q[2][0] + y_data[i]*Q[2][1] + z_data[i]*Q[2][2];
+    x_tmp = x_data[i]*Q[0][0] + y_data[i]*Q[0][1] + z_data[i]*Q[0][2];
+    y_tmp = x_data[i]*Q[1][0] + y_data[i]*Q[1][1] + z_data[i]*Q[1][2];
+    z_tmp = x_data[i]*Q[2][0] + y_data[i]*Q[2][1] + z_data[i]*Q[2][2];
+
+    x_data[i] = x_tmp;
+    y_data[i] = y_tmp;
+    z_data[i] = z_tmp;
   }
 }
 
