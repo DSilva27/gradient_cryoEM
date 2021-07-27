@@ -148,15 +148,23 @@ void EmGrad::calculate() {
   arange(x, min, max, pixel_size);
 
   //Vectors used for masked selection of coordinates
-  std::vector <size_t> x_sel;
-  where(x, x_sel, getPosition(0)[0], cutoff * sigma);
+  // |x_atom - x_grid| < cutoff * sigma
 
-  const myfloat_t counter = x_sel.size();
+  myfloat_t neigh_total = 0;
+  myfloat_t n_atoms = getNumberOfAtoms();
+
+  for (int i=0; i<n_atoms; i++){
+    
+    std::vector <size_t> x_sel;
+    where(x, x_sel, getPosition(i)[0], cutoff * sigma);
+
+    neigh_total += x_sel.size();
+  }
   
   Vector distance=delta(getPosition(0),getPosition(1));
   setAtomsDerivatives(0, 1 * distance);
   setBoxDerivativesNoPbc();
-  setValue(counter);
+  setValue(neigh_total/n_atoms);
 }
 
 }
