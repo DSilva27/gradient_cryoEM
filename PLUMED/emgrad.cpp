@@ -38,7 +38,7 @@ class EmGrad : public Colvar {
   void where(myvector_t &, std::vector<size_t> &, myfloat_t, myfloat_t);
   void read_exp_img(std::string); 
   void quaternion_rotation(myvector_t &, std::vector<Vector> &);
-  void calc_I_and_grad(); 
+  void l2_norm(); 
 
  public:
   static void registerKeywords( Keywords& keys );
@@ -109,6 +109,17 @@ EmGrad::EmGrad(const ActionOptions&ao):
   norm = 1. / (2*M_PI * sigma*sigma * n_atoms);
 
   pos = getPositions();
+
+  //Calculate minimum and maximum values for the linspace-like vectors x and y
+  myfloat_t min = -pixel_size * (n_pixels + 1)*0.5;
+  myfloat_t max = pixel_size * (n_pixels - 3)*0.5 + pixel_size;
+
+  //Assign memory space required to fill the vectors
+  x_grid.resize(n_pixels); y_grid.resize(n_pixels);
+
+  //Generate them
+  arange(x_grid, min, max, pixel_size);
+  arange(y_grid, min, max, pixel_size);
 }
 
 void EmGrad::quaternion_rotation(myvector_t &q, std::vector<Vector> &P){
@@ -249,7 +260,7 @@ void EmGrad::read_exp_img(std::string fname){
   }
 }
 
-void EmGrad::calc_I_and_grad(){
+void EmGrad::l2_norm(){
 
   /**
    * @brief Calculates the image from the 3D model by representing the atoms as gaussians and using a 2d Grid
@@ -268,16 +279,7 @@ void EmGrad::calc_I_and_grad(){
    * 
    */
 
-  //Calculate minimum and maximum values for the linspace-like vectors x and y
-  myfloat_t min = -pixel_size * (n_pixels + 1)*0.5;
-  myfloat_t max = pixel_size * (n_pixels - 3)*0.5 + pixel_size;
-
-  //Assign memory space required to fill the vectors
-  x_grid.resize(n_pixels); y_grid.resize(n_pixels);
-
-  //Generate them
-  arange(x_grid, min, max, pixel_size);
-  arange(y_grid, min, max, pixel_size);
+  
 
   //Vectors used for masked selection of coordinates
   std::vector <size_t> x_sel;
@@ -286,6 +288,7 @@ void EmGrad::calc_I_and_grad(){
   //Vectors to store the values of the gaussians
   myvector_t g_x(n_pixels, 0.0);
   myvector_t g_y(n_pixels, 0.0);
+  int index_i, index_j;
 
   for (int atom=0; atom<n_atoms; atom++){
 
@@ -303,13 +306,15 @@ void EmGrad::calc_I_and_grad(){
 
       g_y[y_sel[i]] = std::exp( -0.5 * (std::pow( (y_grid[y_sel[i]] - pos[atom][1])/sigma, 2 )) );
     }
-
-    myfloat_t s1=0, s2=0, s3=0, s4=0;
+ 
     //Calculate the image and the gradient
-    for (int i=0; i<n_pixels; i++){ 
-      for (int j=0; j<n_pixels; j++){ 
-        
-        Icalc[i][j] += g_x[i] * g_y[j];
+    for (int i=0; i<x_sel.size(); i++){ 
+      index_i = x_sel[i];
+
+      for (int j=0; j<y_sel.size(); j++){ 
+        index_j = y_sel[j];
+
+        Icalc[index_i][index_j] += g_x[index_i] * g_y[index_j];
       }
     }
 
@@ -342,11 +347,17 @@ void EmGrad::calc_I_and_grad(){
 
     myfloat_t s1=0, s2=0;
     //Calculate the image and the gradient
-    for (int i=0; i<n_pixels; i++){ 
-      for (int j=0; j<n_pixels; j++){ 
-        
-        s1 += (Icalc[i][j] * norm - Iexp[i][j]) * (x_grid[i] - pos[atom][0]) * g_x[i] * g_y[j];
-        s2 += (Icalc[i][j] * norm - Iexp[i][j]) * (y_grid[j] - pos[atom][1]) * g_x[i] * g_y[j];
+    for (int i=0; i<x_sel.size(); i++){ 
+      index_i = x_sel[i];
+    
+      for (int j=0; j<y_sel.size(); j++){ 
+
+        index_j = y_sel[j];
+        s1 += (Icalc[index_i][index_j] * norm - Iexp[index_i][index_j]) 
+        * (x_grid[index_i] - pos[atom][0]) * g_x[index_i] * g_y[index_j];
+
+        s2 += (Icalc[index_i][index_j] * norm - Iexp[index_i][index_j]) 
+        * (y_grid[index_j] - pos[atom][1]) * g_x[index_i] * g_y[index_j];
       }
     }
 
@@ -362,8 +373,8 @@ void EmGrad::calc_I_and_grad(){
   s_cv = 0;
   for (int i=0; i<n_pixels; i++){ 
     for (int j=0; j<n_pixels; j++){     
+      
       Icalc[i][j] *= norm;
-
       s_cv += (Icalc[i][j] - Iexp[i][j]) * (Icalc[i][j] - Iexp[i][j]);
     }
   }
@@ -376,7 +387,7 @@ void EmGrad::calculate() {
   if(pbc) makeWhole();
 
   quaternion_rotation(quat, pos);
-  calc_I_and_grad();
+  l2_norm();
   
   for(unsigned i=0; i<getNumberOfAtoms(); i++) setAtomsDerivatives(i, emgrad_der[i]);
   setBoxDerivativesNoPbc();
