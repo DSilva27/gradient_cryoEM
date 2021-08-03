@@ -126,6 +126,8 @@ public:
   void quaternion_rotation(myvector_t &, myfloat_t*, myfloat_t*, myfloat_t*);
 
   void calc_I_and_grad();
+  void correlation(myvector_t &, myvector_t &, myvector_t &,
+                   mymatrix_t &, myfloat_t *, myfloat_t *);
   void calc_I();
   void calc_ctf(mycomplex_t*);
   void conv_proj_ctf();

@@ -311,35 +311,25 @@ void Grad_cv::quaternion_rotation(myvector_t &q, myfloat_t* x_data,
   }
 }
 
-void Grad_cv::calc_I_and_grad(){
+void Grad_cv::correlation(myvector_t &x_a, myvector_t &y_a, myvector_t &z_a,
+mymatrix_t &I_c, myfloat_t* gr_x, myfloat_t* gr_y){
 
   /**
    * @brief Calculates the image from the 3D model by representing the atoms as gaussians and using a 2d Grid
    * 
-   * @param x_coord original coordinates x
-   * @param y_coord original coordinates y
-   * @param z_coord original coordinates z
+   * @param x_a original coordinates x 
+   * @param y_a original coordinates y
+   * @param z_a original coordinates z
    * @param sigma standard deviation for the gaussians, equal for all the atoms  (myfloat_t)
    * @paramsigma_reachnumber of sigmas used for cutoff (int)
    * @param number_pixels Resolution of the calculated image
-   * @param Icalc Matrix used to store the calculated image
-   * @param x values in x for the grid
-   * @param y values in y for the grid
+   * @param I_c Matrix used to store the calculated image
+   * @param gr_x vectors for the gradient in x
+   * @param gr_y vectors for the gradient in y
    * 
    * @return void
    * 
    */
-
-  //Calculate minimum and maximum values for the linspace-like vectors x and y
-  myfloat_t min = -pixel_size * (number_pixels + 1)*0.5;
-  myfloat_t max = pixel_size * (number_pixels - 3)*0.5 + pixel_size;
-
-  //Assign memory space required to fill the vectors
-  x.resize(number_pixels); y.resize(number_pixels);
-
-  //Generate them
-  arange(x, min, max, pixel_size);
-  arange(y, min, max, pixel_size);
 
   //Vectors used for masked selection of coordinates
   std::vector <size_t> x_sel;
@@ -352,17 +342,15 @@ void Grad_cv::calc_I_and_grad(){
   for (int atom=0; atom<n_atoms; atom++){
 
     //calculates the indices that satisfy |x - x_atom| <= sigma_reach*sigma
-    where(x, x_sel, x_coord[atom], sigma_reach * sigma_cv);
-    where(y, y_sel, y_coord[atom], sigma_reach * sigma_cv);
+    where(x, x_sel, x_a[atom], sigma_reach * sigma_cv);
+    where(y, y_sel, y_a[atom], sigma_reach * sigma_cv);
 
     //calculate the gaussians
     for (int i=0; i<x_sel.size(); i++){
-
       g_x[x_sel[i]] = std::exp( -0.5 * (std::pow( (x[x_sel[i]] - x_coord[atom])/sigma_cv, 2 )) );
     }
 
     for (int i=0; i<y_sel.size(); i++){
-
       g_y[y_sel[i]] = std::exp( -0.5 * (std::pow( (y[y_sel[i]] - y_coord[atom])/sigma_cv, 2 )) );
     }
 
@@ -371,30 +359,105 @@ void Grad_cv::calc_I_and_grad(){
     for (int i=0; i<number_pixels; i++){ 
       for (int j=0; j<number_pixels; j++){ 
         
-        Icalc[i][j] += g_x[i] * g_y[j];
-        s1 += (x[i] - x_coord[atom]) * g_x[i] * g_y[j] * Iexp[i][j];
-        s2 += (y[j] - y_coord[atom]) * g_x[i] * g_y[j] * Iexp[i][j];
+        I_c[i][j] += g_x[i] * g_y[j];
+        s1 += (x[i] - x_a[atom]) * g_x[i] * g_y[j] * Iexp[i][j];
+        s2 += (y[j] - y_a[atom]) * g_x[i] * g_y[j] * Iexp[i][j];
       }
     }
 
-    grad_x[atom] = -s1 * norm;
-    grad_y[atom] = -s2 * norm;
+    gr_x[atom] = -s1 * norm;
+    gr_y[atom] = -s2 * norm;
 
     //Reset the vectors for the gaussians and selection
     x_sel.clear(); y_sel.clear();
     g_x = myvector_t(number_pixels, 0);
     g_y = myvector_t(number_pixels, 0);
   }
-
-  std::cout << "Gradient: " << grad_x[0] << std::endl;
   
   for (int i=0; i<number_pixels; i++){ 
     for (int j=0; j<number_pixels; j++){ 
         
-      Icalc[i][j] *= norm;
+      I_c[i][j] *= norm;
     }
   }
 }
+
+void Grad_cv::l2_norm(myvector_t &x_a, myvector_t &y_a, myvector_t &z_a,
+mymatrix_t &I_c, myfloat_t* gr_x, myfloat_t* gr_y){
+
+  /**
+   * @brief Calculates the image from the 3D model by representing the atoms as gaussians and using a 2d Grid
+   * 
+   * @param x_a original coordinates x 
+   * @param y_a original coordinates y
+   * @param z_a original coordinates z
+   * @param sigma standard deviation for the gaussians, equal for all the atoms  (myfloat_t)
+   * @paramsigma_reachnumber of sigmas used for cutoff (int)
+   * @param number_pixels Resolution of the calculated image
+   * @param I_c Matrix used to store the calculated image
+   * @param gr_x vectors for the gradient in x
+   * @param gr_y vectors for the gradient in y
+   * 
+   * @return void
+   * 
+   */
+
+  //Vectors used for masked selection of coordinates
+  std::vector <size_t> x_sel;
+  std::vector <size_t> y_sel;
+
+  //Vectors to store the values of the gaussians
+  myvector_t g_x(number_pixels, 0.0);
+  myvector_t g_y(number_pixels, 0.0);
+
+  for (int atom=0; atom<n_atoms; atom++){
+
+    // //calculates the indices that satisfy |x - x_atom| <= sigma_reach*sigma
+    // where(x, x_sel, x_a[atom], sigma_reach * sigma_cv);
+    // where(y, y_sel, y_a[atom], sigma_reach * sigma_cv);
+
+    // //calculate the gaussians
+    // for (int i=0; i<x_sel.size(); i++){
+
+    //   g_x[x_sel[i]] = std::exp( -0.5 * (std::pow( (x[x_sel[i]] - x_a[atom])/sigma_cv, 2 )) );
+    // }
+
+    // for (int i=0; i<y_sel.size(); i++){
+
+    //   g_y[y_sel[i]] = std::exp( -0.5 * (std::pow( (y[y_sel[i]] - y_a[atom])/sigma_cv, 2 )) );
+    // }
+
+    gauss_calc(x, g_x, x_a[atom], sigma_reach*sigma_cv);
+    gauss_calc(y, g_y, y_a[atom], sigma_reach*sigma_cv);
+
+    myfloat_t s1=0, s2=0;
+    //Calculate the image and the gradient
+    for (int i=0; i<number_pixels; i++){ 
+      for (int j=0; j<number_pixels; j++){ 
+        
+        I_c[i][j] += g_x[i] * g_y[j];
+        s1 += (x[i] - x_a[atom]) * g_x[i] * g_y[j] * Iexp[i][j];
+        s2 += (y[j] - y_a[atom]) * g_x[i] * g_y[j] * Iexp[i][j];
+      }
+    }
+
+    gr_x[atom] = -s1 * norm;
+    gr_y[atom] = -s2 * norm;
+
+    //Reset the vectors for the gaussians and selection
+    x_sel.clear(); y_sel.clear();
+    g_x = myvector_t(number_pixels, 0);
+    g_y = myvector_t(number_pixels, 0);
+  }
+  
+  for (int i=0; i<number_pixels; i++){ 
+    for (int j=0; j<number_pixels; j++){ 
+        
+      I_c[i][j] *= norm;
+    }
+  }
+}
+
 
 void Grad_cv::calc_I(){
 
