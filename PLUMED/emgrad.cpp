@@ -108,8 +108,6 @@ EmGrad::EmGrad(const ActionOptions&ao):
   read_exp_img(IMG_file);
   norm = 1. / (2*M_PI * sigma*sigma * n_atoms);
 
-  pos = getPositions();
-
   //Calculate minimum and maximum values for the linspace-like vectors x and y
   myfloat_t min = -pixel_size * (n_pixels + 1)*0.5;
   myfloat_t max = pixel_size * (n_pixels - 3)*0.5 + pixel_size;
@@ -324,9 +322,6 @@ void EmGrad::l2_norm(){
     g_y = myvector_t(n_pixels, 0);
   }
 
-  //myfloat_t norm = 1; 
-  myfloat_t norm = 1. / (2*M_PI * sigma * sigma * n_atoms);
-
   //Calculate the gradient
   for (int atom=0; atom<n_atoms; atom++){
 
@@ -386,6 +381,10 @@ void EmGrad::calculate() {
 
   if(pbc) makeWhole();
 
+  // Reset image
+  Icalc = mymatrix_t(n_pixels, myvector_t(n_pixels, 0));
+
+  pos = getPositions();
   quaternion_rotation(quat, pos);
   l2_norm();
   

@@ -82,6 +82,17 @@ void Grad_cv::init_variables(std::string pf, std::string cf,
   
   //Turn Icalc into a number_pixels x number_pixels matrix and fill it with zeros
   Icalc = mymatrix_t(number_pixels, myvector_t(number_pixels, 0));
+
+    //Calculate minimum and maximum values for the linspace-like vectors x and y
+  myfloat_t min = -pixel_size * (number_pixels + 1)*0.5;
+  myfloat_t max = pixel_size * (number_pixels - 3)*0.5 + pixel_size;
+
+  //Assign memory space required to fill the vectors
+  x.resize(number_pixels); y.resize(number_pixels);
+
+  //Generate them
+  arange(x, min, max, pixel_size);
+  arange(y, min, max, pixel_size);
 }
 
 void Grad_cv::read_coord(myvector_t &x_a, myvector_t &y_a, myvector_t &z_a){
@@ -338,17 +349,6 @@ mymatrix_t &I_c, myfloat_t* gr_x, myfloat_t* gr_y){
    * 
    */
 
-  //Calculate minimum and maximum values for the linspace-like vectors x and y
-  myfloat_t min = -pixel_size * (number_pixels + 1)*0.5;
-  myfloat_t max = pixel_size * (number_pixels - 3)*0.5 + pixel_size;
-
-  //Assign memory space required to fill the vectors
-  x.resize(number_pixels); y.resize(number_pixels);
-
-  //Generate them
-  arange(x, min, max, pixel_size);
-  arange(y, min, max, pixel_size);
-
   //Vectors used for masked selection of coordinates
   std::vector <size_t> x_sel;
   std::vector <size_t> y_sel;
@@ -498,17 +498,6 @@ void Grad_cv::calc_I(){
    * 
    */
 
-  //Calculate minimum and maximum values for the linspace-like vectors x and y
-  myfloat_t min = -pixel_size * (number_pixels + 1)*0.5;
-  myfloat_t max = pixel_size * (number_pixels - 3)*0.5 + pixel_size;
-
-  //Assign memory space required to fill the vectors
-  x.resize(number_pixels); y.resize(number_pixels);
-
-  //Generate them
-  arange(x, min, max, pixel_size);
-  arange(y, min, max, pixel_size);
-
   //Vectors used for masked selection of coordinates
   std::vector <size_t> x_sel;
   std::vector <size_t> y_sel;
@@ -544,11 +533,8 @@ void Grad_cv::calc_I(){
 
     //Reset the vectors for the gaussians and selection
     x_sel.clear(); y_sel.clear();
-
-    g_x.clear(); g_y.clear();
-    g_x.resize(number_pixels); g_y.resize(number_pixels);
-    std::fill(g_x.begin(), g_x.end(), 0);
-    std::fill(g_y.begin(), g_y.end(), 0);
+    g_x = myvector_t(number_pixels, 0);
+    g_y = myvector_t(number_pixels, 0);
   }
 
   for (int i=0; i<Icalc.size(); i++){ 
