@@ -83,6 +83,17 @@ void Grad_cv::init_variables(std::string pf, std::string cf,
   
   //Turn Icalc into a number_pixels x number_pixels matrix and fill it with zeros
   Icalc = mymatrix_t(number_pixels, myvector_t(number_pixels, 0));
+
+  //Calculate minimum and maximum values for the linspace-like vectors x and y
+  myfloat_t min = -pixel_size * (number_pixels + 1)*0.5;
+  myfloat_t max = pixel_size * (number_pixels - 3)*0.5 + pixel_size;
+
+  //Assign memory space required to fill the vectors
+  x.resize(number_pixels); y.resize(number_pixels);
+
+  //Generate them
+  arange(x, min, max, pixel_size);
+  arange(y, min, max, pixel_size);
 }
 
 void Grad_cv::read_coord(){
@@ -302,17 +313,22 @@ void Grad_cv::quaternion_rotation(myvector_t &q, myfloat_t* x_data,
   myvector_t q2{ q20, q21, q22};
 
   mymatrix_t Q{ q0, q1, q2 };
-
+  myfloat_t x_tmp, y_tmp, z_tmp;
+  
   for (unsigned int i=0; i<n_atoms; i++){
 
-    x_data[i] = x_data[i]*Q[0][0] + y_data[i]*Q[0][1] + z_data[i]*Q[0][2];
-    y_data[i] = x_data[i]*Q[1][0] + y_data[i]*Q[1][1] + z_data[i]*Q[1][2];
-    z_data[i] = x_data[i]*Q[2][0] + y_data[i]*Q[2][1] + z_data[i]*Q[2][2];
+    x_tmp = x_data[i]*Q[0][0] + y_data[i]*Q[0][1] + z_data[i]*Q[0][2];
+    y_tmp = x_data[i]*Q[1][0] + y_data[i]*Q[1][1] + z_data[i]*Q[1][2];
+    z_tmp = x_data[i]*Q[2][0] + y_data[i]*Q[2][1] + z_data[i]*Q[2][2];
+
+    x_data[i] = x_tmp;
+    y_data[i] = y_tmp;
+    z_data[i] = z_tmp;
   }
 }
 
 void Grad_cv::correlation(myvector_t &x_a, myvector_t &y_a, myvector_t &z_a,
-mymatrix_t &I_c, myfloat_t* gr_x, myfloat_t* gr_y){
+mymatrix_t &I_c, myfloat_t* gr_x, myfloat_t* gr_y, myfloat_t &s){
 
   /**
    * @brief Calculates the image from the 3D model by representing the atoms as gaussians and using a 2d Grid
@@ -335,9 +351,13 @@ mymatrix_t &I_c, myfloat_t* gr_x, myfloat_t* gr_y){
   std::vector <size_t> x_sel;
   std::vector <size_t> y_sel;
 
+  //For the calculation of the gradient
+  myfloat_t Ie_c=0, Ie_e=0;
+
   //Vectors to store the values of the gaussians
   myvector_t g_x(number_pixels, 0.0);
   myvector_t g_y(number_pixels, 0.0);
+  int index_i, index_j;
 
   for (int atom=0; atom<n_atoms; atom++){
 
@@ -354,19 +374,74 @@ mymatrix_t &I_c, myfloat_t* gr_x, myfloat_t* gr_y){
       g_y[y_sel[i]] = std::exp( -0.5 * (std::pow( (y[y_sel[i]] - y_coord[atom])/sigma_cv, 2 )) );
     }
 
-    myfloat_t s1=0, s2=0;
+    myfloat_t s1=0, s2=0, s3=0, s4=0;
+    
     //Calculate the image and the gradient
-    for (int i=0; i<number_pixels; i++){ 
-      for (int j=0; j<number_pixels; j++){ 
+    for (int i=0; i<x_sel.size(); i++){ 
+
+      index_i = x_sel[i];
+      for (int j=0; j<y_sel.size(); j++){ 
+
+        index_j = y_sel[j];
         
-        I_c[i][j] += g_x[i] * g_y[j];
-        s1 += (x[i] - x_a[atom]) * g_x[i] * g_y[j] * Iexp[i][j];
-        s2 += (y[j] - y_a[atom]) * g_x[i] * g_y[j] * Iexp[i][j];
+        I_c[index_i][index_j] += g_x[index_i] * g_y[index_j];
       }
     }
 
-    gr_x[atom] = -s1 * norm;
-    gr_y[atom] = -s2 * norm;
+    //Reset the vectors for the gaussians and selection
+    x_sel.clear(); y_sel.clear();
+    g_x = myvector_t(number_pixels, 0);
+    g_y = myvector_t(number_pixels, 0);
+  }
+
+  myfloat_t s_tmp = 0; //used for the CV
+  for (int i=0; i<number_pixels; i++){ 
+    for (int j=0; j<number_pixels; j++){ 
+        
+      I_c[i][j] *= norm;
+      Ie_c += I_c[i][j];
+      Ie_e += Iexp[i][j];
+
+      s_tmp += I_c[i][j] * Iexp[i][j];
+    }
+  }
+
+  s = -s_tmp / (Ie_c * Ie_e);
+
+  for (int atom=0; atom<n_atoms; atom++){
+
+    //calculates the indices that satisfy |x - x_atom| <= sigma_reach*sigma
+    where(x, x_sel, x_a[atom], sigma_reach * sigma_cv);
+    where(y, y_sel, y_a[atom], sigma_reach * sigma_cv);
+
+    //calculate the gaussians
+    for (int i=0; i<x_sel.size(); i++){
+      g_x[x_sel[i]] = std::exp( -0.5 * (std::pow( (x[x_sel[i]] - x_coord[atom])/sigma_cv, 2 )) );
+    }
+
+    for (int i=0; i<y_sel.size(); i++){
+      g_y[y_sel[i]] = std::exp( -0.5 * (std::pow( (y[y_sel[i]] - y_coord[atom])/sigma_cv, 2 )) );
+    }
+
+    myfloat_t s1=0, s2=0, s3=0, s4=0;
+    
+    //Calculate the image and the gradient
+    for (int i=0; i<x_sel.size(); i++){ 
+
+      index_i = x_sel[i];
+      for (int j=0; j<y_sel.size(); j++){ 
+
+        index_j = y_sel[j];
+        
+        s1 += (x[index_i] - x_a[atom]) * g_x[index_i] * g_y[index_j] * Iexp[index_i][index_j];
+        s2 += (y[index_j] - y_a[atom]) * g_x[index_i] * g_y[index_j] * Iexp[index_i][index_j];
+        s3 += (x[index_i] - x_a[atom]) * g_x[index_i] * g_y[index_j];
+        s4 += (y[index_j] - y_a[atom]) * g_x[index_i] * g_y[index_j];
+      }
+    }
+
+    grad_x[atom] = s * (s1/s_tmp - s3/Ie_c) * norm; 
+    grad_y[atom] = s * (s2/s_tmp - s4/Ie_c) * norm; 
 
     //Reset the vectors for the gaussians and selection
     x_sel.clear(); y_sel.clear();
@@ -374,16 +449,10 @@ mymatrix_t &I_c, myfloat_t* gr_x, myfloat_t* gr_y){
     g_y = myvector_t(number_pixels, 0);
   }
   
-  for (int i=0; i<number_pixels; i++){ 
-    for (int j=0; j<number_pixels; j++){ 
-        
-      I_c[i][j] *= norm;
-    }
-  }
 }
 
 void Grad_cv::l2_norm(myvector_t &x_a, myvector_t &y_a, myvector_t &z_a,
-mymatrix_t &I_c, myfloat_t* gr_x, myfloat_t* gr_y){
+mymatrix_t &I_c, myfloat_t* gr_x, myfloat_t* gr_y, myfloat_t &s){
 
   /**
    * @brief Calculates the image from the 3D model by representing the atoms as gaussians and using a 2d Grid
@@ -402,6 +471,7 @@ mymatrix_t &I_c, myfloat_t* gr_x, myfloat_t* gr_y){
    * 
    */
 
+
   //Vectors used for masked selection of coordinates
   std::vector <size_t> x_sel;
   std::vector <size_t> y_sel;
@@ -410,39 +480,76 @@ mymatrix_t &I_c, myfloat_t* gr_x, myfloat_t* gr_y){
   myvector_t g_x(number_pixels, 0.0);
   myvector_t g_y(number_pixels, 0.0);
 
+  int index_i, index_j;
   for (int atom=0; atom<n_atoms; atom++){
 
-    // //calculates the indices that satisfy |x - x_atom| <= sigma_reach*sigma
-    // where(x, x_sel, x_a[atom], sigma_reach * sigma_cv);
-    // where(y, y_sel, y_a[atom], sigma_reach * sigma_cv);
+    //calculates the indices that satisfy |x - x_atom| <= sigma_reach*sigma
+    where(x, x_sel, x_a[atom], sigma_reach * sigma_cv);
+    where(y, y_sel, y_a[atom], sigma_reach * sigma_cv);
 
-    // //calculate the gaussians
-    // for (int i=0; i<x_sel.size(); i++){
+    //calculate the gaussians
+    for (int i=0; i<x_sel.size(); i++){
 
-    //   g_x[x_sel[i]] = std::exp( -0.5 * (std::pow( (x[x_sel[i]] - x_a[atom])/sigma_cv, 2 )) );
-    // }
+      myfloat_t expon_x = (x[x_sel[i]] - x_a[atom])/sigma_cv;
+      g_x[x_sel[i]] = std::exp( -0.5 * expon_x * expon_x );
+    }
 
-    // for (int i=0; i<y_sel.size(); i++){
+    for (int i=0; i<y_sel.size(); i++){
+      
+      myfloat_t expon_y = (y[y_sel[i]] - y_a[atom])/sigma_cv;
+      g_y[y_sel[i]] = std::exp( -0.5 * expon_y * expon_y );
+    }
 
-    //   g_y[y_sel[i]] = std::exp( -0.5 * (std::pow( (y[y_sel[i]] - y_a[atom])/sigma_cv, 2 )) );
-    // }
-
-    gauss_calc(x, g_x, x_a[atom], sigma_reach*sigma_cv);
-    gauss_calc(y, g_y, y_a[atom], sigma_reach*sigma_cv);
-
-    myfloat_t s1=0, s2=0;
     //Calculate the image and the gradient
-    for (int i=0; i<number_pixels; i++){ 
-      for (int j=0; j<number_pixels; j++){ 
+    for (int i=0; i<x_sel.size(); i++){ 
+     
+      index_i = x_sel[i];
+      for (int j=0; j<y_sel.size(); j++){ 
         
-        I_c[i][j] += g_x[i] * g_y[j];
-        s1 += (x[i] - x_a[atom]) * g_x[i] * g_y[j] * Iexp[i][j];
-        s2 += (y[j] - y_a[atom]) * g_x[i] * g_y[j] * Iexp[i][j];
+        index_j = y_sel[j];
+        I_c[index_i][index_j] += g_x[index_i] * g_y[index_j];
       }
     }
 
-    gr_x[atom] = -s1 * norm;
-    gr_y[atom] = -s2 * norm;
+    //Reset the vectors for the gaussians and selection
+    x_sel.clear(); y_sel.clear();
+    g_x = myvector_t(number_pixels, 0);
+    g_y = myvector_t(number_pixels, 0);
+  }
+
+  for (int atom=0; atom<n_atoms; atom++){
+
+    //calculates the indices that satisfy |x - x_atom| <= sigma_reach*sigma
+    where(x, x_sel, x_a[atom], sigma_reach * sigma_cv);
+    where(y, y_sel, y_a[atom], sigma_reach * sigma_cv);
+
+    //calculate the gaussians
+    for (int i=0; i<x_sel.size(); i++){
+
+      g_x[x_sel[i]] = std::exp( -0.5 * (std::pow( (x[x_sel[i]] - x_a[atom])/sigma_cv, 2 )) );
+    }
+
+    for (int i=0; i<y_sel.size(); i++){
+
+      g_y[y_sel[i]] = std::exp( -0.5 * (std::pow( (y[y_sel[i]] - y_a[atom])/sigma_cv, 2 )) );
+    }
+
+    myfloat_t s1=0, s2=0;
+
+    //Calculate the image and the gradient
+    for (int i=0; i<x_sel.size(); i++){ 
+
+      index_i = x_sel[i];
+      for (int j=0; j<y_sel.size(); j++){ 
+
+        index_j = y_sel[j];
+        s1 += (I_c[index_i][index_j] * norm - Iexp[index_i][index_j]) * (x[index_i] - x_a[atom]) * g_x[index_i] * g_y[index_j];
+        s2 += (I_c[index_i][index_j] * norm - Iexp[index_i][index_j]) * (y[index_j] - y_a[atom]) * g_x[index_i] * g_y[index_j];
+      }
+    }
+
+    gr_x[atom] = s1 * 2 * norm / (sigma_cv * sigma_cv);
+    gr_y[atom] = s2 * 2 * norm / (sigma_cv * sigma_cv);
 
     //Reset the vectors for the gaussians and selection
     x_sel.clear(); y_sel.clear();
@@ -450,14 +557,16 @@ mymatrix_t &I_c, myfloat_t* gr_x, myfloat_t* gr_y){
     g_y = myvector_t(number_pixels, 0);
   }
   
+  s = 0;
+
   for (int i=0; i<number_pixels; i++){ 
     for (int j=0; j<number_pixels; j++){ 
-        
+      
       I_c[i][j] *= norm;
+      s += (I_c[i][j] - Iexp[i][j]) * (I_c[i][j] - Iexp[i][j]);
     }
   }
 }
-
 
 void Grad_cv::calc_I(){
 
@@ -715,120 +824,27 @@ void Grad_cv::gaussian_normalization(){
   }
 }
 
-myfloat_t Grad_cv::collective_variable(){
-
-  /**
-   * @brief Calculates the collective variable (s). Which is the cross-correlation between the calculated image
-   *        and an experimental or synthetic image.
-   * 
-   *        s = - sum_w sum_{x, y} Icalcc(x, y, phi_w) * Iw(x, y)
-   * 
-   *      ! phi_w is a rotation (to be developed)
-   * 
-   * @param Icalc calculated image (matrix of myfloat_ts)
-   * @param Iexp experimental or synthetic image (matrix of myfloat_ts)
-   * 
-   * @return s the value of the collective variable
-   */
-
-  myfloat_t s=0; //to store the collective variable
-
-  //TODO: improve the raising of this warning
-  if (Icalc.size() != Iexp.size()){ 
-
-    std::cout << "Intensity matrices must have the same dimension" << std::endl;
-    return 0;
-  }
-
-  myfloat_t Icalc_sum = 0;
-  myfloat_t Iexp_sum = 0;
-
-  for (int i=0; i<number_pixels; i++){
-    for (int j=0; j<number_pixels; j++){
-
-      s += Icalc[i][j] * Iexp[i][j];
-      Icalc_sum += Icalc[i][j] * Icalc[i][j];
-      Iexp_sum += Iexp[i][j] * Iexp[i][j];
-    }
-  }
-
-  //Normalize cv (still have to normalize the gradient!)
-  return -s; // / (Icalc_sum * Iexp_sum);
-}
-
-void Grad_cv::gradient(myvector_t &r, myvector_t &r_a, myvector_t &sgrad, const char *R){
-
-  /**
-   * @brief Calculates the gradient of the colective variable (s) for image w along r_a 
-   *        An example respect to coordinate x:
-   *        
-   *        ds_w/dx_i = - sum_{x, y} (x - x_i)/sigma_cv^2 * Icalc(x, y, phi_w)Iw(x, y)
-   * 
-   *        ! phi_w is a rotation (to be developed)
-   * 
-   * @param Icalc calculated image (matrix of myfloat_ts)
-   * @param Iexp experimental or synthetic image (matrix of myfloat_ts)
-   * @param r coordinates for the grid (e.g x or y)
-   * @param r_a coordinates for the atoms (e.g x_a or y_a)
-   * @param sigma standard deviation of the gaussians used for the atoms
-   * 
-   * @return void
-   * 
-   */
-
-  // TODO I still have to normalize the gradient
-
-  //Creates matrices of dimension number_pixels x number_pixels filled with zeros
-  mymatrix_t Sxy(number_pixels, myvector_t (number_pixels, 0));
-  mymatrix_t Iexp_T(number_pixels, myvector_t (number_pixels, 0));
-
-  transpose(Iexp, Iexp_T);
-  
-  if (R = "x") matmul(Icalc, Iexp_T, Sxy);
-  if (R = "y") matmul(Iexp_T, Icalc, Sxy);
-
-  for (int i=0; i<n_atoms; i++){
-    for (int j=0; j<r.size(); j++){
-
-      sgrad[i] += (r_a[i] - r[j]) * Sxy[j][j];
-    }
-    sgrad[i] /= std::pow(sigma_cv, 2);
-  }
-}
-
 void Grad_cv::grad_run(){
 
 
   //Rotate the coordinates
   quaternion_rotation(quat, x_coord, y_coord, z_coord);
-
-  std::cout << "\n Performing image projection ..." << std::endl;
-  calc_I_and_grad();
-  std::cout << "... done" << std::endl;
-
-    
-  //The convoluted image was written in Iexp because we need two images to test the cv and the gradient
-  /* std::cout << "\n Applying CTF to calcualted image ..." << std::endl;
-  conv_proj_ctf();
-  std::cout << "... done" << std::endl;
- */
-
-  //Add gaussian noise with std equal to the intensity variance of the image times the SNR
-  //I_with_noise(Icalc, Icalc_var * SNR);  
   
   std::cout << "\n Calculating CV and its gradient..." << std::endl;
 
-  s_cv = collective_variable();
-  //gradient(x, x_coord, grad_x, "x");
-  //gradient(y, y_coord, grad_y, "y");
-  //grad_z is already initialized with zeros
+  correlation(x_coord, y_coord, z_coord, 
+              Icalc, grad_x, grad_y, s_cv);
+
+  //Uncomment if you want to use l2_norm
+  // l2_norm(x_coord, y_coord, z_coord, 
+  //         Icalc, grad_x, grad_y, s_cv);
+
+  std::cout <<"\n ...done" << std::endl;
   
   //Rotating gradient
   quaternion_rotation(quat_inv, grad_x, grad_y, grad_z);
-
-
   results_to_json(s_cv, grad_x, grad_y, grad_z);
-  std::cout <<"\n ...done" << std::endl;
+  
 }
 
 void Grad_cv::gen_run(bool use_qt){
@@ -931,49 +947,6 @@ void Grad_cv::arange(myvector_t &out_vec, myfloat_t xo, myfloat_t xf, myfloat_t 
 
     //fills a vector with values separated by a_x starting from xo [xo, xo + a, xo + 2a, ...]
     std::generate(out_vec.begin(), out_vec.end(), [n=0, &xo, &a_x]() mutable { return n++ * a_x + xo; });   
-}
-
-void Grad_cv::transpose(mymatrix_t &A, mymatrix_t &A_T){
-
-  /**
-   * @brief Computes the transpose of a matrix
-   * 
-   * @param A: original matrix (mymatrix_t)
-   * @param A_T: matrix where the transpose of A will be stored (mymatrix_t)
-   * 
-   * @return void
-   */
-
-  for (int i=0; i<A.size(); i++){
-    for (int j=0; j<A[0].size(); j++){
-
-      A_T[i][j] = A[j][i]; //turns Aij to Aji
-    }
-  }
-}
-
-void Grad_cv::matmul(mymatrix_t &A, mymatrix_t &B, mymatrix_t &C){
-
-  /**
-   * @brief Performs matrix multiplication of 2D matrices. The second
-   *        one is always transposed. So A * B_T = C
-   * 
-   * @param A matrix to be multiplied by the left (mymatrix_t)
-   * @param B matrix to be multiplied by the right (mymatrix_t)
-   * @param C matrix used to store the multiplication (mymatrix_t)
-   * 
-   * @return void
-   */
-
-  for (int i=0; i<C.size(); i++){
-    for (int j=0; j<C[0].size(); j++){
-
-      for (int k=0; k<A.size(); k++){
-
-          C[i][j] += A[i][k] * B[j][k]; //Typical matrix multiplication cij = sum_k aik bkj
-      }
-    }
-  }
 }
 
 void Grad_cv::print_image(mymatrix_t &Im, std::string fname){
@@ -1189,97 +1162,6 @@ int Grad_cv::read_parameters(std::string fileinput){
             "microscope\n";
 
   return 0;
-}
-
-
-/* void Grad_cv::load_parameters() { 
-
-  char letter, eq;
-  myfloat_t value;
-
-  std::string input_path = "data/input/";
-  std::ifstream file;
-  file.open(input_path + params_file);
-
-
-  if (file.fail()){
-    std::cout << "Warning: file " + params_file + " doesn't exist" << std::endl;
-
-    return;
-  }
-
-  while (file >> letter >> eq >> value) {
-
-    switch (letter) {
-
-    case 'N':
-      n = (int)value;
-      break;
-
-    case 'S':
-      sigma = value;
-      break;
-
-    case 'R':
-      number_pixels = (int)value;
-      break;
-
-    case 'P':
-      pixel_size = (float)value;
-      break;
-
-    default:
-
-      std::cout << "InputError: undefined parameter in parameters.txt" << std::endl;
-      break;
-    }
-  }
-
-  file.close();
-} */
-
-void Grad_cv::load_quaternions(myvector_t &q){
-  
-  char letter, eq;
-  myfloat_t value;
-
-  std::ifstream file;
-  file.open("data/input/quaternions.txt");
-
-  if (file.fail()){
-    std::cout << "Warning: file quaternions.txt doesn't exist" << std::endl;
-
-    return;
-  }
-
-  while (file >> letter >> eq >> value) {
-
-    switch (letter) {
-
-    case 'A':
-      q[0] = value;
-      break;
-
-    case 'B':
-      q[1] = value;
-      break;
-
-    case 'C':
-      q[2] = value;
-      break;
-      
-    case 'D':
-      q[3] = value;
-      break;
-
-    default:
-
-      std::cout << "InputError: undefined parameter in quaternions.txt" << std::endl;
-      break;
-    }
-  }
-
-  file.close();
 }
 
 void Grad_cv::results_to_json(myfloat_t s, myfloat_t* sgrad_x, myfloat_t* sgrad_y, myfloat_t* sgrad_z) {
