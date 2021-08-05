@@ -85,8 +85,8 @@ void Grad_cv::init_variables(std::string pf, std::string cf,
   Icalc = mymatrix_t(number_pixels, myvector_t(number_pixels, 0));
 
   //Calculate minimum and maximum values for the linspace-like vectors x and y
-  myfloat_t min = -pixel_size * (number_pixels + 1)*0.5;
-  myfloat_t max = pixel_size * (number_pixels - 3)*0.5 + pixel_size;
+  myfloat_t min = -pixel_size * (number_pixels - 1)*0.5;
+  myfloat_t max = pixel_size * (number_pixels - 1)*0.5 + pixel_size;
 
   //Assign memory space required to fill the vectors
   x.resize(number_pixels); y.resize(number_pixels);
@@ -832,6 +832,7 @@ void Grad_cv::grad_run(){
   
   std::cout << "\n Calculating CV and its gradient..." << std::endl;
 
+  // Comment if using l2-norm
   correlation(x_coord, y_coord, z_coord, 
               Icalc, grad_x, grad_y, s_cv);
 
