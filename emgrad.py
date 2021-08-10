@@ -57,7 +57,6 @@ def calc_grad(parser):
     mygrad_calc.load_args(args)
     mygrad_calc.calc_gradient()
 
-
 def grad_desc(parser):
 
     parser.add_argument("--n_proc", help="number of processors used. Default=1", default=1, type=int)
@@ -77,6 +76,20 @@ def grad_desc(parser):
     mygrad_desc.load_args(args)
     mygrad_desc.grad_descent()
 
+def run_traj(parser):
+
+    parser.add_argument("--n_proc", help="number of processors used. Default=1", default=1, type=int)
+    parser.add_argument("--n_img", help="number of images to be compared", required=True, type=int)
+    parser.add_argument("--ref_pdb", help="name of the reference (for alignment) pdb (do not include path)", required=True)
+    parser.add_argument("--system_pdb", help="name of the system pdb (do not include path)", required=True)
+    parser.add_argument("--system_traj", help="name of the system traj (do not include path)", required=True)
+
+    args = parser.parse_args()
+
+    mytraj_test = GL.test_traj()
+    mytraj_test.load_args(args)
+    mytraj_test.run_traj()
+
 def main():
 
     parser = argparse.ArgumentParser()
@@ -95,6 +108,9 @@ def main():
 
     elif args.program == "grad_desc":
         grad_desc(parser)
+
+    elif args.program == "traj_test":
+        run_traj(parser)
 
     else:
         raise NameError(args.program + " has not been defined. Please check the documentation.")

@@ -23,7 +23,7 @@ void Grad_cv::init_variables(std::string pf, std::string cf,
   n_atoms = x_coord.size();
 
   //If we are creating images
-  if (p_type == "D"){
+  if (strcmp(p_type, "D") == 0){
 
     //Generate random defocus and calculate the phase
     std::random_device seeder;
@@ -51,7 +51,7 @@ void Grad_cv::init_variables(std::string pf, std::string cf,
     quat[3] = std::sqrt(u1) * cos(2 * M_PI * u3);
   }
 
-  else if (p_type == "G"){
+  else if (strcmp(p_type, "G") == 0){
 
     Iexp = mymatrix_t(number_pixels, myvector_t(number_pixels, 0));
     quat = myvector_t(number_pixels, 0);
@@ -137,7 +137,7 @@ void Grad_cv::read_coord(){
   } 
 
 
-
+n_atoms = N;
 std::cout << "Number of atoms: " << n_atoms << std::endl;
 }
 
@@ -153,7 +153,7 @@ void Grad_cv::prepare_FFTs(){
 
   //Check if wisdom file exists and import it if that's the case
   //The plans only depend on the number of pixels!
-  if (std::filesystem::exists(wisdom_file)) fftwf_import_wisdom_from_filename(wisdom_file.c_str());
+  if (std::filesystem::exists(wisdom_file)) myfftw_import_wisdom_from_filename(wisdom_file.c_str());
   
 
   //Create plans for the fftw
@@ -185,7 +185,7 @@ void Grad_cv::prepare_FFTs(){
 
   
   //If the wisdom file doesn't exists, then create a new one
-  if (!std::filesystem::exists(wisdom_file)) fftwf_export_wisdom_to_filename(wisdom_file.c_str());
+  if (!std::filesystem::exists(wisdom_file)) myfftw_export_wisdom_to_filename(wisdom_file.c_str());
 
   fft_plans_created = 1;
 }
@@ -517,45 +517,45 @@ mymatrix_t &I_c, myfloat_t* gr_x, myfloat_t* gr_y, myfloat_t &s){
     g_y = myvector_t(number_pixels, 0);
   }
 
-  for (int atom=0; atom<n_atoms; atom++){
+  // for (int atom=0; atom<n_atoms; atom++){
 
-    //calculates the indices that satisfy |x - x_atom| <= sigma_reach*sigma
-    where(x, x_sel, x_a[atom], sigma_reach * sigma_cv);
-    where(y, y_sel, y_a[atom], sigma_reach * sigma_cv);
+  //   //calculates the indices that satisfy |x - x_atom| <= sigma_reach*sigma
+  //   where(x, x_sel, x_a[atom], sigma_reach * sigma_cv);
+  //   where(y, y_sel, y_a[atom], sigma_reach * sigma_cv);
 
-    //calculate the gaussians
-    for (int i=0; i<x_sel.size(); i++){
+  //   //calculate the gaussians
+  //   for (int i=0; i<x_sel.size(); i++){
 
-      g_x[x_sel[i]] = std::exp( -0.5 * (std::pow( (x[x_sel[i]] - x_a[atom])/sigma_cv, 2 )) );
-    }
+  //     g_x[x_sel[i]] = std::exp( -0.5 * (std::pow( (x[x_sel[i]] - x_a[atom])/sigma_cv, 2 )) );
+  //   }
 
-    for (int i=0; i<y_sel.size(); i++){
+  //   for (int i=0; i<y_sel.size(); i++){
 
-      g_y[y_sel[i]] = std::exp( -0.5 * (std::pow( (y[y_sel[i]] - y_a[atom])/sigma_cv, 2 )) );
-    }
+  //     g_y[y_sel[i]] = std::exp( -0.5 * (std::pow( (y[y_sel[i]] - y_a[atom])/sigma_cv, 2 )) );
+  //   }
 
-    myfloat_t s1=0, s2=0;
+  //   myfloat_t s1=0, s2=0;
 
-    //Calculate the image and the gradient
-    for (int i=0; i<x_sel.size(); i++){ 
+  //   //Calculate the image and the gradient
+  //   for (int i=0; i<x_sel.size(); i++){ 
 
-      index_i = x_sel[i];
-      for (int j=0; j<y_sel.size(); j++){ 
+  //     index_i = x_sel[i];
+  //     for (int j=0; j<y_sel.size(); j++){ 
 
-        index_j = y_sel[j];
-        s1 += (I_c[index_i][index_j] * norm - Iexp[index_i][index_j]) * (x[index_i] - x_a[atom]) * g_x[index_i] * g_y[index_j];
-        s2 += (I_c[index_i][index_j] * norm - Iexp[index_i][index_j]) * (y[index_j] - y_a[atom]) * g_x[index_i] * g_y[index_j];
-      }
-    }
+  //       index_j = y_sel[j];
+  //       s1 += (I_c[index_i][index_j] * norm - Iexp[index_i][index_j]) * (x[index_i] - x_a[atom]) * g_x[index_i] * g_y[index_j];
+  //       s2 += (I_c[index_i][index_j] * norm - Iexp[index_i][index_j]) * (y[index_j] - y_a[atom]) * g_x[index_i] * g_y[index_j];
+  //     }
+  //   }
 
-    gr_x[atom] = s1 * 2 * norm / (sigma_cv * sigma_cv);
-    gr_y[atom] = s2 * 2 * norm / (sigma_cv * sigma_cv);
+  //   gr_x[atom] = s1 * 2 * norm / (sigma_cv * sigma_cv);
+  //   gr_y[atom] = s2 * 2 * norm / (sigma_cv * sigma_cv);
 
-    //Reset the vectors for the gaussians and selection
-    x_sel.clear(); y_sel.clear();
-    g_x = myvector_t(number_pixels, 0);
-    g_y = myvector_t(number_pixels, 0);
-  }
+  //   //Reset the vectors for the gaussians and selection
+  //   x_sel.clear(); y_sel.clear();
+  //   g_x = myvector_t(number_pixels, 0);
+  //   g_y = myvector_t(number_pixels, 0);
+  // }
   
   s = 0;
 
@@ -828,24 +828,23 @@ void Grad_cv::grad_run(){
 
 
   //Rotate the coordinates
-  quaternion_rotation(quat, x_coord, y_coord, z_coord);
+  //quaternion_rotation(quat, x_coord, y_coord, z_coord);
   
   std::cout << "\n Calculating CV and its gradient..." << std::endl;
 
   // Comment if using l2-norm
-  correlation(x_coord, y_coord, z_coord, 
-              Icalc, grad_x, grad_y, s_cv);
+  // correlation(x_coord, y_coord, z_coord, 
+  //             Icalc, grad_x, grad_y, s_cv);
 
   //Uncomment if you want to use l2_norm
-  // l2_norm(x_coord, y_coord, z_coord, 
-  //         Icalc, grad_x, grad_y, s_cv);
+  l2_norm(x_coord, y_coord, z_coord, 
+          Icalc, grad_x, grad_y, s_cv);
 
   std::cout <<"\n ...done" << std::endl;
   
   //Rotating gradient
-  quaternion_rotation(quat_inv, grad_x, grad_y, grad_z);
+  //quaternion_rotation(quat_inv, grad_x, grad_y, grad_z);
   results_to_json(s_cv, grad_x, grad_y, grad_z);
-  
 }
 
 void Grad_cv::gen_run(bool use_qt){
@@ -1169,14 +1168,15 @@ void Grad_cv::results_to_json(myfloat_t s, myfloat_t* sgrad_x, myfloat_t* sgrad_
 
   std::ofstream gradfile;
 
-  gradfile.open(json_file);
+  gradfile.open(json_file); 
 
   //begin json file
   gradfile << "[" << std::endl;
   gradfile << std::setw(4) << "{" << std::endl;
 
   //save colvar
-  gradfile << std::setw(10) << "\"s\": "
+  std::cout.precision(17);
+  gradfile << std::setprecision(15) << std::setw(10) << "\"s\": "
            << s << "," << std::endl;
 
   //begin sgrad_x

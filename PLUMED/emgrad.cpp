@@ -32,6 +32,8 @@ class EmGrad : public Colvar {
   
   std::vector<Vector> pos, emgrad_der;
   myfloat_t s_cv;
+
+  Tensor virial;
   
   void read_coord(myvector_t &, myvector_t &, myvector_t &, myfloat_t &);
   void arange(myvector_t &, myfloat_t, myfloat_t, myfloat_t);
@@ -109,8 +111,8 @@ EmGrad::EmGrad(const ActionOptions&ao):
   norm = 1. / (2*M_PI * sigma*sigma * n_atoms);
 
   //Calculate minimum and maximum values for the linspace-like vectors x and y
-  myfloat_t min = -pixel_size * (n_pixels + 1)*0.5;
-  myfloat_t max = pixel_size * (n_pixels - 3)*0.5 + pixel_size;
+  myfloat_t min = -pixel_size * (n_pixels - 1)*0.5;
+  myfloat_t max = pixel_size * (n_pixels - 1)*0.5 + pixel_size;
 
   //Assign memory space required to fill the vectors
   x_grid.resize(n_pixels); y_grid.resize(n_pixels);
@@ -297,12 +299,16 @@ void EmGrad::l2_norm(){
     //calculate the gaussians
     for (int i=0; i<x_sel.size(); i++){
 
-      g_x[x_sel[i]] = std::exp( -0.5 * (std::pow( (x_grid[x_sel[i]] - pos[atom][0])/sigma, 2 )) );
+      //g_x[x_sel[i]] = std::exp( -0.5 * (std::pow( (x_grid[x_sel[i]] - pos[atom][0])/sigma, 2 )) );
+      myfloat_t expon_x = (x_grid[x_sel[i]] - pos[atom][0])/sigma;
+      g_x[x_sel[i]] = std::exp( -0.5 * expon_x * expon_x );
     }
 
     for (int i=0; i<y_sel.size(); i++){
 
-      g_y[y_sel[i]] = std::exp( -0.5 * (std::pow( (y_grid[y_sel[i]] - pos[atom][1])/sigma, 2 )) );
+      //g_y[y_sel[i]] = std::exp( -0.5 * (std::pow( (y_grid[y_sel[i]] - pos[atom][1])/sigma, 2 )) );
+      myfloat_t expon_y = (y_grid[y_sel[i]] - pos[atom][1])/sigma;
+      g_y[y_sel[i]] = std::exp( -0.5 * expon_y * expon_y );
     }
  
     //Calculate the image and the gradient
@@ -379,18 +385,22 @@ void EmGrad::l2_norm(){
 // calculator
 void EmGrad::calculate() {
 
-  if(pbc) makeWhole();
+  //if(pbc) makeWhole();
 
   // Reset image
   Icalc = mymatrix_t(n_pixels, myvector_t(n_pixels, 0));
 
   pos = getPositions();
-  quaternion_rotation(quat, pos);
+  //quaternion_rotation(quat, pos);
   l2_norm();
   
-  for(unsigned i=0; i<getNumberOfAtoms(); i++) setAtomsDerivatives(i, emgrad_der[i]);
-  setBoxDerivativesNoPbc();
+  for(unsigned i=0; i<getNumberOfAtoms(); i++){
+
+    setAtomsDerivatives(i, emgrad_der[i]);
+    virial -= Tensor(pos[i], emgrad_der[i]);
+  }
   setValue(s_cv);
+  setBoxDerivatives(getPntrToComponent(s_cv), virial);
 }
 
 }

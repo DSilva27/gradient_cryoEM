@@ -22,20 +22,40 @@
 
 
 // **************** DEFINITIONS ***********************
-typedef float myfloat_t;
+// typedef float myfloat_t;
+// typedef myfloat_t mycomplex_t[2];
+// typedef std::vector <myfloat_t> myvector_t;
+// typedef std::vector <myvector_t> mymatrix_t;
+
+// #define myfftw_malloc fftwf_malloc
+// #define myfftw_free fftwf_free
+// #define myfftw_destroy_plan fftwf_destroy_plan
+// #define myfftw_execute_dft_r2c fftwf_execute_dft_r2c
+// #define myfftw_execute_dft_c2r fftwf_execute_dft_c2r
+// #define myfftw_plan_dft_r2c_2d fftwf_plan_dft_r2c_2d
+// #define myfftw_plan_dft_c2r_2d fftwf_plan_dft_c2r_2d
+// #define myfftw_plan fftwf_plan
+// #define myfftw_cleanup fftwf_cleanup
+// #define myfftw_import_wisdom_from_filename fftwf_import_wisdom_from_filename
+// #define myfftw_export_wisdom_to_filename fftwf_export_wisdom_to_filename
+
+typedef double myfloat_t;
 typedef myfloat_t mycomplex_t[2];
 typedef std::vector <myfloat_t> myvector_t;
 typedef std::vector <myvector_t> mymatrix_t;
 
-#define myfftw_malloc fftwf_malloc
-#define myfftw_free fftwf_free
-#define myfftw_destroy_plan fftwf_destroy_plan
-#define myfftw_execute_dft_r2c fftwf_execute_dft_r2c
-#define myfftw_execute_dft_c2r fftwf_execute_dft_c2r
-#define myfftw_plan_dft_r2c_2d fftwf_plan_dft_r2c_2d
-#define myfftw_plan_dft_c2r_2d fftwf_plan_dft_c2r_2d
-#define myfftw_plan fftwf_plan
-#define myfftw_cleanup fftwf_cleanup
+#define myfftw_malloc fftw_malloc
+#define myfftw_free fftw_free
+#define myfftw_destroy_plan fftw_destroy_plan
+#define myfftw_execute_dft_r2c fftw_execute_dft_r2c
+#define myfftw_execute_dft_c2r fftw_execute_dft_c2r
+#define myfftw_plan_dft_r2c_2d fftw_plan_dft_r2c_2d
+#define myfftw_plan_dft_c2r_2d fftw_plan_dft_c2r_2d
+#define myfftw_plan fftw_plan
+#define myfftw_cleanup fftw_cleanup
+#define myfftw_import_wisdom_from_filename fftw_import_wisdom_from_filename
+#define myfftw_export_wisdom_to_filename fftw_export_wisdom_to_filename
+
 
 #define myError(error, ...)                                                    \
   {                                                                            \

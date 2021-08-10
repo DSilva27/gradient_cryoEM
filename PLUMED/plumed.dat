@@ -8,10 +8,10 @@ FIT_TO_TEMPLATE REFERENCE=centered_CA.pdb TYPE=OPTIMAL
 EMGRAD ...
     LABEL=emgrad
     ATOMS=c_alphas
-    SIGMA=1 CUTOFF=3 N_PIXELS=124 PIXEL_SIZE=1.0
+    SIGMA=1.0 CUTOFF=4 N_PIXELS=124 PIXEL_SIZE=1.0
     IMG_FILE=Icalc_0.txt
 ...
 
 # print the colvar and its derivatives
-PRINT ARG=emgrad FILE=COLVAR STRIDE=1
+PRINT ARG=emgrad FILE=COLVAR STRIDE=10
 
