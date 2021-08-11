@@ -399,8 +399,11 @@ void EmGrad::calculate() {
     setAtomsDerivatives(i, emgrad_der[i]);
     virial -= Tensor(pos[i], emgrad_der[i]);
   }
+
   setValue(s_cv);
-  setBoxDerivatives(getPntrToComponent(s_cv), virial);
+
+  Value* val=getPntrToComponent(s_cv);
+  //setBoxDerivatives(val, virial);
 }
 
 }

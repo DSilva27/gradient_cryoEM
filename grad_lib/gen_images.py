@@ -29,8 +29,8 @@ class img_generator:
     def prep_system(self):
         
 
-        self.system_atoms = self.ref_universe.select_atoms('all').positions - \
-                       self.ref_universe.atoms.center_of_mass()
+        self.system_atoms = self.ref_universe.select_atoms('name CA').positions #- \
+                      #self.ref_universe.atoms.center_of_mass()
 
         # Rotate the coordinates
         self.system_atoms = self.system_atoms.T
@@ -40,9 +40,9 @@ class img_generator:
         if os.path.exists("data/input/coord.txt"):
             os.system("rm data/input/coord.txt")
 
-        with open("data/input/coord.txt", "a") as f:
+        with open("data/input/coord.txt", "w") as f:
             f.write("{cols}\n".format(cols=self.n_atoms)) 
-            np.savetxt(f, self.system_atoms, fmt='%.4f')
+            np.savetxt(f, self.system_atoms/10, fmt='%.4f')
         
         
     def gen_db(self):
