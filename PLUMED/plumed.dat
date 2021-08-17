@@ -2,16 +2,18 @@ LOAD FILE=emgrad.cpp
 MOLINFO STRUCTURE=structure0.pdb MOLTYPE=protein
 GROUP NDX_FILE=index.ndx NDX_GROUP=C-alpha LABEL=c_alphas
 
-FIT_TO_TEMPLATE REFERENCE=centered_CA.pdb TYPE=OPTIMAL
+FIT_TO_TEMPLATE REFERENCE=holo_centered_CA.pdb TYPE=OPTIMAL
 
 # create CV
 EMGRAD ...
     LABEL=emgrad
     ATOMS=c_alphas
     SIGMA=0.1 CUTOFF=100 N_PIXELS=124 PIXEL_SIZE=0.1
-    IMG_FILE=Icalc_1.txt
+    IMG_FILE=holo_img.txt
 ...
 
+rmsd: RMSD REFERENCE=holo_centered_CA.pdb TYPE=OPTIMAL
+
 # print the colvar and its derivatives
-PRINT ARG=emgrad FILE=COLVAR STRIDE=1
+PRINT ARG=emgrad,rmsd FILE=COLVAR STRIDE=1 FMT=%.15f
 

@@ -1,6 +1,6 @@
 IDIR = include
 CC = g++
-CFLAGS = -std=c++17 -O3 -g -I$(IDIR) -lm -lfftw3 
+CFLAGS = -std=c++17 -O3 -g -I$(IDIR) -lm -lfftw3 -qopt-report
 
 SDIR = src
 

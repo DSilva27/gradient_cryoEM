@@ -8,7 +8,7 @@ import argparse
 
 def gen_img(index):
 
-        os.system(f"./gradcv.out {index} -gen -qt > /dev/null 2>&1")
+        os.system(f"./gradcv.out {index} -gen -nqt > /dev/null 2>&1")
         return 1
 
 class img_generator:
@@ -29,8 +29,8 @@ class img_generator:
     def prep_system(self):
         
 
-        self.system_atoms = self.ref_universe.select_atoms('name CA').positions #- \
-                      #self.ref_universe.atoms.center_of_mass()
+        self.system_atoms = self.ref_universe.select_atoms('name CA').positions - \
+                      self.ref_universe.atoms.center_of_mass()
 
         # Rotate the coordinates
         self.system_atoms = self.system_atoms.T

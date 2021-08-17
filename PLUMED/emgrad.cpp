@@ -161,7 +161,7 @@ void EmGrad::quaternion_rotation(myvector_t &q, std::vector<Vector> &P){
 
   myfloat_t x_tmp, y_tmp, z_tmp;
 
-  for (unsigned int i=0; i<n_atoms; i++){
+  for (int i=0; i<n_atoms; i++){
 
     x_tmp = P[i][0]*Q[0][0] + P[i][1]*Q[0][1] + P[i][2]*Q[0][2];
     y_tmp = P[i][0]*Q[1][0] + P[i][1]*Q[1][1] + P[i][2]*Q[1][2];
@@ -385,25 +385,24 @@ void EmGrad::l2_norm(){
 // calculator
 void EmGrad::calculate() {
 
-  //if(pbc) makeWhole();
+  if(pbc) makeWhole();
 
   // Reset image
   Icalc = mymatrix_t(n_pixels, myvector_t(n_pixels, 0));
 
   pos = getPositions();
+
   //quaternion_rotation(quat, pos);
   l2_norm();
   
-  for(unsigned i=0; i<getNumberOfAtoms(); i++){
+  for(unsigned int i=0; i<getNumberOfAtoms(); i++){
 
     setAtomsDerivatives(i, emgrad_der[i]);
     virial -= Tensor(pos[i], emgrad_der[i]);
   }
 
   setValue(s_cv);
-
-  Value* val=getPntrToComponent(s_cv);
-  //setBoxDerivatives(val, virial);
+  setBoxDerivatives(virial);
 }
 
 }
