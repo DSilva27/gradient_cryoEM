@@ -2,6 +2,7 @@
 #include "/Data/Packages/Research/plumed2/src/isdb/colvar/ActionRegister.h"
 #include "/Data/Packages/Research/plumed2/src/isdb/core/PlumedMain.h"
 #include "/Data/Packages/Research/plumed2/src/isdb/tools/Pbc.h"
+#include "/Data/Packages/Research/plumed2/src/isdb/tools/OpenMP.h"
 
 #include <string>
 #include <cmath>
