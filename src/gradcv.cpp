@@ -1,5 +1,5 @@
 #include "gradcv.h"
-
+#include <chrono>
 
 Grad_cv::Grad_cv(){}
 
@@ -19,8 +19,19 @@ void Grad_cv::init_variables(std::string pf, std::string cf,
   //############################### Read parameters and coordinates #####################################
   read_coord();
   read_parameters(params_file);
-  number_pixels_fft_1d = number_pixels/2 + 1;
-  n_atoms = x_coord.size();
+  n_pixels_fft_1d = n_pixels/2 + 1;
+  n_neigh = (int) std::ceil(sigma_cv * sigma_reach / pixel_size);
+
+  // Initialize and read experimental images
+  exp_imgs = mydataset_t(n_imgs);
+
+  for (int i = 0; i < n_imgs; i++){
+
+    exp_imgs[i].inten = mymatrix_t(n_pixels, myvector_t(n_pixels, 0.0));
+    read_exp_img("data/images/Icalc_"+std::to_string(i)+".txt", &exp_imgs[i]);
+  }
+
+  grad_r = mymatrix_t(n_atoms, myvector_t(3, 0.0));
 
   //If we are creating images
   if (strcmp(p_type, "D") == 0){
@@ -49,51 +60,43 @@ void Grad_cv::init_variables(std::string pf, std::string cf,
     quat[1] = std::sqrt(1 - u1) * cos(2 * M_PI * u2);
     quat[2] = std::sqrt(u1) * sin(2 * M_PI * u3);
     quat[3] = std::sqrt(u1) * cos(2 * M_PI * u3);
-  }
+  } 
 
-  else if (strcmp(p_type, "G") == 0){
+/*   else if (strcmp(p_type, "G") == 0){
 
-    Iexp = mymatrix_t(number_pixels, myvector_t(number_pixels, 0));
-    quat = myvector_t(number_pixels, 0);
+    Iexp = mymatrix_t(n_pixels, myvector_t(n_pixels, 0));
+    quat = myvector_t(n_pixels, 0);
+    quat_inv = myvector_t(n_pixels, 0);
 
     
-    //Turn grad_* into a number_pixels vector and fill it with zeros
-    grad_x = (myfloat_t*) malloc(sizeof(myfloat_t) * n_atoms);
-    grad_y = (myfloat_t*) malloc(sizeof(myfloat_t) * n_atoms);
-    grad_z = (myfloat_t*) malloc(sizeof(myfloat_t) * n_atoms);
+    //Turn grad_* into a n_pixels vector and fill it with zeros
+    grad_r = mymatrix_t(n_atoms, myvector_t(3, 0.0));
 
-    for (int i=0; i<n_atoms; i++){
-
-      grad_x[i] = 0;
-      grad_y[i] = 0;
-      grad_z[i] = 0;
-    }
     std::cout << "Variables initialized" << std::endl;
 
     //#################### Read experimental image (includes defocus and quaternions) ###########################
-    read_exp_img(image_file);
+    read_exp_img(image_file, defocus, quat, quat_inv, Iexp);
     phase = defocus * M_PI * 2. * 10000 * elecwavel;
-  }
+  } */
 
   //######################### Preparing FFTWs and allocating memory for images and gradients ##################
   //Prepare FFTs
   prepare_FFTs();
   
-  //Turn Icalc into a number_pixels x number_pixels matrix and fill it with zeros
-  Icalc = mymatrix_t(number_pixels, myvector_t(number_pixels, 0));
-
   //Calculate minimum and maximum values for the linspace-like vectors x and y
-  myfloat_t min = -pixel_size * (number_pixels - 1)*0.5;
-  myfloat_t max = pixel_size * (number_pixels - 1)*0.5 + pixel_size;
+  grid_min = -pixel_size * (n_pixels - 1)*0.5;
+  grid_max = pixel_size * (n_pixels - 1)*0.5 + pixel_size;
 
   //Assign memory space required to fill the vectors
-  x.resize(number_pixels); y.resize(number_pixels);
+  x.resize(n_pixels); y.resize(n_pixels);
 
   //Generate them
-  arange(x, min, max, pixel_size);
-  arange(y, min, max, pixel_size);
+  arange(x, grid_min, grid_max, pixel_size);
+  arange(y, grid_min, grid_max, pixel_size);
 
   norm = 1. / (2*M_PI * sigma_cv*sigma_cv * n_atoms);
+
+  std::cout << "Variables initialized" << std::endl;
 }
 
 void Grad_cv::read_coord(){
@@ -124,23 +127,24 @@ void Grad_cv::read_coord(){
 
   int N; //to store the number of atoms
   coord_file >> N;
+  r_coord = mymatrix_t(N, myvector_t(3, 0.0));
 
   myfloat_t a; //auxiliary variable to read from the file
 
-  for (int col=0; col<N * 3; col++){
+  for (int i=0; i<N * 3; i++){
 
     coord_file >> a;
     
-    if (col < N) x_coord.push_back(a);
-    else if (col >= N && col < 2*N) y_coord.push_back(a);
-    else if (col >= 2*N) z_coord.push_back(a);
+    if (i < N) r_coord[i][0] = a;
+    else if (i >= N && i < 2*N) r_coord[i - N][1] = a;
+    else if (i >= 2*N) r_coord[i - 2*N][2] = a;
   } 
 
 
 n_atoms = N;
 std::cout << "Number of atoms: " << n_atoms << std::endl;
 
-std::cout << x_coord[0] << n_atoms << std::endl;
+std::cout << n_atoms << std::endl;
 }
 
 void Grad_cv::prepare_FFTs(){
@@ -151,7 +155,7 @@ void Grad_cv::prepare_FFTs(){
 
   std::string wisdom_file;
 
-  wisdom_file = "data/FFTW_wisdom/wisdom" + std::to_string(number_pixels) + ".txt";
+  wisdom_file = "data/FFTW_wisdom/wisdom" + std::to_string(n_pixels) + ".txt";
 
   //Check if wisdom file exists and import it if that's the case
   //The plans only depend on the number of pixels!
@@ -164,18 +168,18 @@ void Grad_cv::prepare_FFTs(){
 
   //temporal variables used to create the plans
   tmp_map = (mycomplex_t *) myfftw_malloc(sizeof(mycomplex_t) *
-                                          number_pixels *
-                                          number_pixels);
+                                          n_pixels *
+                                          n_pixels);
   tmp_map2 = (mycomplex_t *) myfftw_malloc(sizeof(mycomplex_t) *
-                                           number_pixels *
-                                           number_pixels);
+                                           n_pixels *
+                                           n_pixels);
   
   fft_plan_r2c_forward = myfftw_plan_dft_r2c_2d(
-      number_pixels, number_pixels,
+      n_pixels, n_pixels,
       (myfloat_t *) tmp_map, tmp_map2, FFTW_MEASURE | FFTW_DESTROY_INPUT);
 
   fft_plan_c2r_backward = myfftw_plan_dft_c2r_2d(
-      number_pixels, number_pixels, tmp_map,
+      n_pixels, n_pixels, tmp_map,
       (myfloat_t *) tmp_map2, FFTW_MEASURE | FFTW_DESTROY_INPUT);
 
   if (fft_plan_r2c_forward == 0 || fft_plan_c2r_backward == 0){
@@ -192,42 +196,7 @@ void Grad_cv::prepare_FFTs(){
   fft_plans_created = 1;
 }
 
-void Grad_cv::center_coord(myvector_t &x_a,  myvector_t &y_a,  myvector_t &z_a){
-
-  /**
-   * @brief Centers the coordinates of the biomolecule around its center of mass 
-   * 
-   * @param x_a stores the values of x
-   * @param y_a stores the values of y
-   * @param z_a stores the values of z
-   * 
-   * @return void
-   */
-
-  myfloat_t x_mean, y_mean, z_mean;
-  int n = x_a.size();
-
-  for (unsigned int i=0; i<n; i++){
-
-    x_mean += x_a[i];
-    y_mean += y_a[i];
-    z_mean += z_a[i];
-  }
-
-  x_mean /= n;
-  y_mean /= n;
-  z_mean /= n;
-
-  for (unsigned int i=0; i<n; i++){
-
-    x_a[i] -= x_mean;
-    y_a[i] -= y_mean;
-    z_a[i] -= z_mean;
-  }
-}
-
-void Grad_cv::quaternion_rotation(myvector_t &q, myvector_t &x_data, 
-                                  myvector_t &y_data, myvector_t &z_data){
+void Grad_cv::quaternion_rotation(myvector_t &q, mymatrix_t &r_ref, mymatrix_t &r_rot){
 
 /**
  * @brief Rotates a biomolecule using the quaternions rotation matrix
@@ -264,22 +233,15 @@ void Grad_cv::quaternion_rotation(myvector_t &q, myvector_t &x_data,
 
   mymatrix_t Q{ q0, q1, q2 };
 
-  myvector_t x_r(n_atoms, 0); myvector_t z_r(n_atoms, 0); myvector_t y_r(n_atoms, 0);
+  for (int i=0; i<n_atoms; i++){
 
-  for (unsigned int i=0; i<n_atoms; i++){
-
-    x_r[i] = x_data[i]*Q[0][0] + y_data[i]*Q[0][1] + z_data[i]*Q[0][2];
-    y_r[i] = x_data[i]*Q[1][0] + y_data[i]*Q[1][1] + z_data[i]*Q[1][2];
-    z_r[i] = x_data[i]*Q[2][0] + y_data[i]*Q[2][1] + z_data[i]*Q[2][2];
+    r_rot[i][0] = Q[0][0]*r_ref[i][0] + Q[0][1]*r_ref[i][1] + Q[0][2]*r_ref[i][2];
+    r_rot[i][1] = Q[1][0]*r_ref[i][0] + Q[1][1]*r_ref[i][1] + Q[1][2]*r_ref[i][2];
+    r_rot[i][2] = Q[2][0]*r_ref[i][0] + Q[2][1]*r_ref[i][1] + Q[2][2]*r_ref[i][2];
   }
-
-  x_data = x_r;
-  y_data = y_r;
-  z_data = z_r;
 }
 
-void Grad_cv::quaternion_rotation(myvector_t &q, myfloat_t* x_data, 
-                                  myfloat_t* y_data, myfloat_t* z_data){
+void Grad_cv::quaternion_rotation(myvector_t &q, mymatrix_t &r_ref){
 
 /**
  * @brief Rotates a biomolecule using the quaternions rotation matrix
@@ -315,33 +277,28 @@ void Grad_cv::quaternion_rotation(myvector_t &q, myfloat_t* x_data,
   myvector_t q2{ q20, q21, q22};
 
   mymatrix_t Q{ q0, q1, q2 };
+
   myfloat_t x_tmp, y_tmp, z_tmp;
-  
   for (unsigned int i=0; i<n_atoms; i++){
 
-    x_tmp = x_data[i]*Q[0][0] + y_data[i]*Q[0][1] + z_data[i]*Q[0][2];
-    y_tmp = x_data[i]*Q[1][0] + y_data[i]*Q[1][1] + z_data[i]*Q[1][2];
-    z_tmp = x_data[i]*Q[2][0] + y_data[i]*Q[2][1] + z_data[i]*Q[2][2];
+    x_tmp = Q[0][0]*r_ref[i][0] + Q[0][1]*r_ref[i][1] + Q[0][2]*r_ref[i][2];
+    y_tmp = Q[1][0]*r_ref[i][0] + Q[1][1]*r_ref[i][1] + Q[1][2]*r_ref[i][2];
+    z_tmp = Q[2][0]*r_ref[i][0] + Q[2][1]*r_ref[i][1] + Q[2][2]*r_ref[i][2];
 
-    x_data[i] = x_tmp;
-    y_data[i] = y_tmp;
-    z_data[i] = z_tmp;
+    r_ref[i][0] = x_tmp;
+    r_ref[i][1] = y_tmp;
+    r_ref[i][2] = z_tmp;
   }
 }
 
-void Grad_cv::correlation(myvector_t &x_a, myvector_t &y_a, myvector_t &z_a,
-mymatrix_t &I_c, myfloat_t* gr_x, myfloat_t* gr_y, myfloat_t &s){
+void Grad_cv::L2_grad(mymatrix_t &r_a, mymatrix_t &I_c, mymatrix_t &I_e,
+                      mymatrix_t &gr_r, myfloat_t &s){
 
   /**
    * @brief Calculates the image from the 3D model by representing the atoms as gaussians and using a 2d Grid
    * 
    * @param x_a original coordinates x 
-   * @param y_a original coordinates y
-   * @param z_a original coordinates z
-   * @param sigma standard deviation for the gaussians, equal for all the atoms  (myfloat_t)
-   * @paramsigma_reachnumber of sigmas used for cutoff (int)
-   * @param number_pixels Resolution of the calculated image
-   * @param I_c Matrix used to store the calculated image
+    * @param I_c Matrix used to store the calculated image
    * @param gr_x vectors for the gradient in x
    * @param gr_y vectors for the gradient in y
    * 
@@ -349,228 +306,70 @@ mymatrix_t &I_c, myfloat_t* gr_x, myfloat_t* gr_y, myfloat_t &s){
    * 
    */
 
-  //Vectors used for masked selection of coordinates
-  std::vector <size_t> x_sel;
-  std::vector <size_t> y_sel;
+  int m_x, m_y;
+  int ind_i, ind_j;
 
-  //For the calculation of the gradient
-  myfloat_t Ie_c=0, Ie_e=0;
-
-  //Vectors to store the values of the gaussians
-  myvector_t g_x(number_pixels, 0.0);
-  myvector_t g_y(number_pixels, 0.0);
-  int index_i, index_j;
+  // std::vector<size_t> x_sel, y_sel;
+  myvector_t gauss_x(2*n_neigh+3, 0.0);
+  myvector_t gauss_y(2*n_neigh+3, 0.0);
 
   for (int atom=0; atom<n_atoms; atom++){
 
-    //calculates the indices that satisfy |x - x_atom| <= sigma_reach*sigma
-    where(x, x_sel, x_a[atom], sigma_reach * sigma_cv);
-    where(y, y_sel, y_a[atom], sigma_reach * sigma_cv);
+    m_x = (int) std::round(abs(r_a[atom][0] - grid_min)/pixel_size);
+    m_y = (int) std::round(abs(r_a[atom][1] - grid_min)/pixel_size);
 
-    //calculate the gaussians
-    for (int i=0; i<x_sel.size(); i++){
-      g_x[x_sel[i]] = std::exp( -0.5 * (std::pow( (x[x_sel[i]] - x_coord[atom])/sigma_cv, 2 )) );
-    }
-
-    for (int i=0; i<y_sel.size(); i++){
-      g_y[y_sel[i]] = std::exp( -0.5 * (std::pow( (y[y_sel[i]] - y_coord[atom])/sigma_cv, 2 )) );
-    }
-
-    myfloat_t s1=0, s2=0, s3=0, s4=0;
-    
-    //Calculate the image and the gradient
-    for (int i=0; i<x_sel.size(); i++){ 
-
-      index_i = x_sel[i];
-      for (int j=0; j<y_sel.size(); j++){ 
-
-        index_j = y_sel[j];
-        
-        I_c[index_i][index_j] += g_x[index_i] * g_y[index_j];
-      }
-    }
-
-    //Reset the vectors for the gaussians and selection
-    x_sel.clear(); y_sel.clear();
-    g_x = myvector_t(number_pixels, 0);
-    g_y = myvector_t(number_pixels, 0);
-  }
-
-  myfloat_t s_tmp = 0; //used for the CV
-  for (int i=0; i<number_pixels; i++){ 
-    for (int j=0; j<number_pixels; j++){ 
-        
-      I_c[i][j] *= norm;
-      Ie_c += I_c[i][j];
-      Ie_e += Iexp[i][j];
-
-      s_tmp += I_c[i][j] * Iexp[i][j];
-    }
-  }
-
-  s = -s_tmp / (Ie_c * Ie_e);
-
-  for (int atom=0; atom<n_atoms; atom++){
-
-    //calculates the indices that satisfy |x - x_atom| <= sigma_reach*sigma
-    where(x, x_sel, x_a[atom], sigma_reach * sigma_cv);
-    where(y, y_sel, y_a[atom], sigma_reach * sigma_cv);
-
-    //calculate the gaussians
-    for (int i=0; i<x_sel.size(); i++){
-      g_x[x_sel[i]] = std::exp( -0.5 * (std::pow( (x[x_sel[i]] - x_coord[atom])/sigma_cv, 2 )) );
-    }
-
-    for (int i=0; i<y_sel.size(); i++){
-      g_y[y_sel[i]] = std::exp( -0.5 * (std::pow( (y[y_sel[i]] - y_coord[atom])/sigma_cv, 2 )) );
-    }
-
-    myfloat_t s1=0, s2=0, s3=0, s4=0;
-    
-    //Calculate the image and the gradient
-    for (int i=0; i<x_sel.size(); i++){ 
-
-      index_i = x_sel[i];
-      for (int j=0; j<y_sel.size(); j++){ 
-
-        index_j = y_sel[j];
-        
-        s1 += (x[index_i] - x_a[atom]) * g_x[index_i] * g_y[index_j] * Iexp[index_i][index_j];
-        s2 += (y[index_j] - y_a[atom]) * g_x[index_i] * g_y[index_j] * Iexp[index_i][index_j];
-        s3 += (x[index_i] - x_a[atom]) * g_x[index_i] * g_y[index_j];
-        s4 += (y[index_j] - y_a[atom]) * g_x[index_i] * g_y[index_j];
-      }
-    }
-
-    grad_x[atom] = s * (s1/s_tmp - s3/Ie_c) * norm; 
-    grad_y[atom] = s * (s2/s_tmp - s4/Ie_c) * norm; 
-
-    //Reset the vectors for the gaussians and selection
-    x_sel.clear(); y_sel.clear();
-    g_x = myvector_t(number_pixels, 0);
-    g_y = myvector_t(number_pixels, 0);
-  }
-  
-}
-
-void Grad_cv::l2_norm(myvector_t &x_a, myvector_t &y_a, myvector_t &z_a,
-mymatrix_t &I_c, myfloat_t* gr_x, myfloat_t* gr_y, myfloat_t &s){
-
-  /**
-   * @brief Calculates the image from the 3D model by representing the atoms as gaussians and using a 2d Grid
-   * 
-   * @param x_a original coordinates x 
-   * @param y_a original coordinates y
-   * @param z_a original coordinates z
-   * @param sigma standard deviation for the gaussians, equal for all the atoms  (myfloat_t)
-   * @paramsigma_reachnumber of sigmas used for cutoff (int)
-   * @param number_pixels Resolution of the calculated image
-   * @param I_c Matrix used to store the calculated image
-   * @param gr_x vectors for the gradient in x
-   * @param gr_y vectors for the gradient in y
-   * 
-   * @return void
-   * 
-   */
-
-
-  //Vectors used for masked selection of coordinates
-  std::vector <size_t> x_sel;
-  std::vector <size_t> y_sel;
-
-  //Vectors to store the values of the gaussians
-  myvector_t g_x(number_pixels, 0.0);
-  myvector_t g_y(number_pixels, 0.0);
-
-  int index_i, index_j;
-  for (int atom=0; atom<n_atoms; atom++){
-
-    //calculates the indices that satisfy |x - x_atom| <= sigma_reach*sigma
-    where(x, x_sel, x_a[atom], sigma_reach * sigma_cv);
-    where(y, y_sel, y_a[atom], sigma_reach * sigma_cv);
-
-    //calculate the gaussians
-    for (int i=0; i<x_sel.size(); i++){
-
-      myfloat_t expon_x = (x[x_sel[i]] - x_a[atom])/sigma_cv;
-      g_x[x_sel[i]] = std::exp( -0.5 * expon_x * expon_x );
-    }
-
-    for (int i=0; i<y_sel.size(); i++){
+    for (int i=0; i<=2*n_neigh+2; i++){
       
-      myfloat_t expon_y = (y[y_sel[i]] - y_a[atom])/sigma_cv;
-      g_y[y_sel[i]] = std::exp( -0.5 * expon_y * expon_y );
-    }
+      ind_i = m_x - n_neigh - 1 + i;
+      ind_j = m_y - n_neigh - 1 + i;
 
-    //Calculate the image and the gradient
-    for (int i=0; i<x_sel.size(); i++){ 
-     
-      index_i = x_sel[i];
-      for (int j=0; j<y_sel.size(); j++){ 
-        
-        index_j = y_sel[j];
-        I_c[index_i][index_j] += g_x[index_i] * g_y[index_j];
+      if (ind_i<0 || ind_i>=n_pixels) gauss_x[i] = 0;
+      else {
+
+        myfloat_t expon_x = (x[ind_i] - r_a[atom][0])/sigma_cv;
+        gauss_x[i] = std::exp( -0.5 * expon_x * expon_x );
+      }
+            
+      if (ind_j<0 || ind_j>=n_pixels) gauss_y[i] = 0;
+      else{
+
+        myfloat_t expon_y = (y[ind_j] - r_a[atom][1])/sigma_cv;
+        gauss_y[i] = std::exp( -0.5 * expon_y * expon_y );
       }
     }
 
-    //Reset the vectors for the gaussians and selection
-    x_sel.clear(); y_sel.clear();
-    g_x = myvector_t(number_pixels, 0);
-    g_y = myvector_t(number_pixels, 0);
+    myfloat_t s1=0, s2=0;
+
+    //Calculate the image and the gradient
+    for (int i=0; i<=2*n_neigh+2; i++){
+      
+      ind_i = m_x - n_neigh - 1 + i;
+      if (ind_i<0 || ind_i>=n_pixels) continue;
+      
+      for (int j=0; j<=2*n_neigh+2; j++){
+
+        ind_j = m_y - n_neigh - 1 + j;
+        if (ind_j<0 || ind_j>=n_pixels) continue;
+
+        s1 += (I_c[ind_i][ind_j] - I_e[ind_i][ind_j]) * (x[ind_i] - r_a[atom][0]) * gauss_x[i] * gauss_y[j];
+        s2 += (I_c[ind_i][ind_j] - I_e[ind_i][ind_j]) * (y[ind_j] - r_a[atom][1]) * gauss_x[i] * gauss_y[j];
+      }
+    }
+
+    gr_r[atom][0] = s1 * 2*norm / (sigma_cv * sigma_cv);
+    gr_r[atom][1] = s2 * 2*norm / (sigma_cv * sigma_cv);
   }
-
-  // for (int atom=0; atom<n_atoms; atom++){
-
-  //   //calculates the indices that satisfy |x - x_atom| <= sigma_reach*sigma
-  //   where(x, x_sel, x_a[atom], sigma_reach * sigma_cv);
-  //   where(y, y_sel, y_a[atom], sigma_reach * sigma_cv);
-
-  //   //calculate the gaussians
-  //   for (int i=0; i<x_sel.size(); i++){
-
-  //     g_x[x_sel[i]] = std::exp( -0.5 * (std::pow( (x[x_sel[i]] - x_a[atom])/sigma_cv, 2 )) );
-  //   }
-
-  //   for (int i=0; i<y_sel.size(); i++){
-
-  //     g_y[y_sel[i]] = std::exp( -0.5 * (std::pow( (y[y_sel[i]] - y_a[atom])/sigma_cv, 2 )) );
-  //   }
-
-  //   myfloat_t s1=0, s2=0;
-
-  //   //Calculate the image and the gradient
-  //   for (int i=0; i<x_sel.size(); i++){ 
-
-  //     index_i = x_sel[i];
-  //     for (int j=0; j<y_sel.size(); j++){ 
-
-  //       index_j = y_sel[j];
-  //       s1 += (I_c[index_i][index_j] * norm - Iexp[index_i][index_j]) * (x[index_i] - x_a[atom]) * g_x[index_i] * g_y[index_j];
-  //       s2 += (I_c[index_i][index_j] * norm - Iexp[index_i][index_j]) * (y[index_j] - y_a[atom]) * g_x[index_i] * g_y[index_j];
-  //     }
-  //   }
-
-  //   gr_x[atom] = s1 * 2 * norm / (sigma_cv * sigma_cv);
-  //   gr_y[atom] = s2 * 2 * norm / (sigma_cv * sigma_cv);
-
-  //   //Reset the vectors for the gaussians and selection
-  //   x_sel.clear(); y_sel.clear();
-  //   g_x = myvector_t(number_pixels, 0);
-  //   g_y = myvector_t(number_pixels, 0);
-  // }
   
   s = 0;
-
-  for (int i=0; i<number_pixels; i++){ 
-    for (int j=0; j<number_pixels; j++){ 
+  for (int i=0; i<n_pixels; i++){ 
+    for (int j=0; j<n_pixels; j++){ 
       
-      I_c[i][j] *= norm;
-      s += (I_c[i][j] - Iexp[i][j]) * (I_c[i][j] - Iexp[i][j]);
+      s += (I_c[i][j] - I_e[i][j]) * (I_c[i][j] - I_e[i][j]);
     }
   }
 }
 
-void Grad_cv::calc_I(myvector_t &x_a, myvector_t &y_a, myvector_t &z_a, mymatrix_t &I_c){
+void Grad_cv::calc_I(mymatrix_t &r_a, mymatrix_t &I_c){
 
   /**
    * @brief Calculates the image from the 3D model by representing the atoms as gaussians and using a 2d Grid
@@ -580,7 +379,7 @@ void Grad_cv::calc_I(myvector_t &x_a, myvector_t &y_a, myvector_t &z_a, mymatrix
    * @param z_coord original coordinates z
    * @param sigma standard deviation for the gaussians, equal for all the atoms  (myfloat_t)
    * @paramsigma_reachnumber of sigmas used for cutoff (int)
-   * @param number_pixels Resolution of the calculated image
+   * @param n_pixels Resolution of the calculated image
    * @param Icalc Matrix used to store the calculated image
    * @param x values in x for the grid
    * @param y values in y for the grid
@@ -589,59 +388,64 @@ void Grad_cv::calc_I(myvector_t &x_a, myvector_t &y_a, myvector_t &z_a, mymatrix
    * 
    */
 
-   //Vectors used for masked selection of coordinates
-  std::vector <size_t> x_sel;
-  std::vector <size_t> y_sel;
+  int m_x, m_y;
+  int ind_i, ind_j;
 
-  //Vectors to store the values of the gaussians
-  myvector_t g_x(number_pixels, 0.0);
-  myvector_t g_y(number_pixels, 0.0);
+  // std::vector<size_t> x_sel, y_sel;
+  myvector_t gauss_x(2*n_neigh+3, 0.0);
+  myvector_t gauss_y(2*n_neigh+3, 0.0);
 
-  int index_i, index_j;
   for (int atom=0; atom<n_atoms; atom++){
 
-    //calculates the indices that satisfy |x - x_atom| <= sigma_reach*sigma
-    where(x, x_sel, x_a[atom], sigma_reach * sigma_cv);
-    where(y, y_sel, y_a[atom], sigma_reach * sigma_cv);
+    m_x = (int) std::round(abs(r_a[atom][0] - grid_min)/pixel_size);
+    m_y = (int) std::round(abs(r_a[atom][1] - grid_min)/pixel_size);
 
-    //calculate the gaussians
-    for (int i=0; i<x_sel.size(); i++){
-
-      myfloat_t expon_x = (x[x_sel[i]] - x_a[atom])/sigma_cv;
-      g_x[x_sel[i]] = std::exp( -0.5 * expon_x * expon_x );
-    }
-
-    for (int i=0; i<y_sel.size(); i++){
+    #PRAGMA
+    for (int i=0; i<=2*n_neigh+2; i++){
       
-      myfloat_t expon_y = (y[y_sel[i]] - y_a[atom])/sigma_cv;
-      g_y[y_sel[i]] = std::exp( -0.5 * expon_y * expon_y );
-    }
+      ind_i = m_x - n_neigh - 1 + i;
+      ind_j = m_y - n_neigh - 1 + i;
 
-    //Calculate the image and the gradient
-    for (int i=0; i<x_sel.size(); i++){ 
-     
-      index_i = x_sel[i];
-      for (int j=0; j<y_sel.size(); j++){ 
-        
-        index_j = y_sel[j];
-        I_c[index_i][index_j] += g_x[index_i] * g_y[index_j];
+      if (ind_i<0 || ind_i>=n_pixels) gauss_x[i] = 0;
+      else {
+
+        myfloat_t expon_x = (x[ind_i] - r_a[atom][0])/sigma_cv;
+        gauss_x[i] = std::exp( -0.5 * expon_x * expon_x );
+      }
+            
+      if (ind_j<0 || ind_j>=n_pixels) gauss_y[i] = 0;
+      else{
+
+        myfloat_t expon_y = (y[ind_j] - r_a[atom][1])/sigma_cv;
+        gauss_y[i] = std::exp( -0.5 * expon_y * expon_y );
       }
     }
 
-    //Reset the vectors for the gaussians and selection
-    x_sel.clear(); y_sel.clear();
-    g_x = myvector_t(number_pixels, 0);
-    g_y = myvector_t(number_pixels, 0);
+    myfloat_t s1=0, s2=0;
+
+    //Calculate the image and the gradient
+    for (int i=0; i<=2*n_neigh+2; i++){
+      
+      ind_i = m_x - n_neigh - 1 + i;
+      if (ind_i<0 || ind_i>=n_pixels) continue;
+      
+      for (int j=0; j<=2*n_neigh+2; j++){
+
+        ind_j = m_y - n_neigh - 1 + j;
+        if (ind_j<0 || ind_j>=n_pixels) continue;
+
+        I_c[ind_i][ind_j] += gauss_x[i]*gauss_y[j];
+      }
+    }
   }
 
-  for (int i=0; i<number_pixels; i++){ 
-    for (int j=0; j<number_pixels; j++){ 
+  for (int i=0; i<n_pixels; i++){ 
+    for (int j=0; j<n_pixels; j++){ 
         
       I_c[i][j] *= norm;
     }
   }
 }
-
 
 void Grad_cv::calc_ctf(mycomplex_t* ctf){
 
@@ -652,10 +456,10 @@ void Grad_cv::calc_ctf(mycomplex_t* ctf){
 
   myfloat_t radsq, val, normctf;
 
-  for (int i=0; i<number_pixels_fft_1d; i++){ 
-    for (int j=0; j<number_pixels_fft_1d; j++){
+  for (int i=0; i<n_pixels_fft_1d; i++){ 
+    for (int j=0; j<n_pixels_fft_1d; j++){
 
-        radsq = (myfloat_t)(i * i + j * j) / number_pixels_fft_1d / number_pixels_fft_1d 
+        radsq = (myfloat_t)(i * i + j * j) / n_pixels_fft_1d / n_pixels_fft_1d 
                                            / pixel_size / pixel_size;
 
         val = exp(-b_factor * radsq * 0.5) * 
@@ -664,25 +468,25 @@ void Grad_cv::calc_ctf(mycomplex_t* ctf){
 
         if (i==0 && j==0) normctf = (myfloat_t) val;
 
-        ctf[i * number_pixels_fft_1d + j][0] = val/normctf;
-        ctf[i * number_pixels_fft_1d + j][1] = 0;
+        ctf[i * n_pixels_fft_1d + j][0] = val/normctf;
+        ctf[i * n_pixels_fft_1d + j][1] = 0;
 
-        ctf[(number_pixels - i - 1) 
-            * number_pixels_fft_1d + j][0] = val/normctf;
+        ctf[(n_pixels - i - 1) 
+            * n_pixels_fft_1d + j][0] = val/normctf;
 
-        ctf[(number_pixels - i - 1) 
-            * number_pixels_fft_1d + j][1] = 0;      
+        ctf[(n_pixels - i - 1) 
+            * n_pixels_fft_1d + j][1] = 0;      
     }
   }
 }
 
 void Grad_cv::conv_proj_ctf(){
   
-  mycomplex_t *CTF = (mycomplex_t *) myfftw_malloc(sizeof(mycomplex_t) * number_pixels * number_pixels_fft_1d);
+  mycomplex_t *CTF = (mycomplex_t *) myfftw_malloc(sizeof(mycomplex_t) * n_pixels * n_pixels_fft_1d);
 
-  memset(CTF, 0, number_pixels * number_pixels_fft_1d * sizeof(mycomplex_t));
+  memset(CTF, 0, n_pixels * n_pixels_fft_1d * sizeof(mycomplex_t));
 
-  for (int i = 0; i < number_pixels*number_pixels_fft_1d; i++){
+  for (int i = 0; i < n_pixels*n_pixels_fft_1d; i++){
 
       CTF[i][0] = 0.f;
       CTF[i][1] = 0.f;
@@ -692,18 +496,18 @@ void Grad_cv::conv_proj_ctf(){
 
   // std::ofstream ctf_file("data/output/ctf_file.txt");
 
-  // for (int i=0; i<number_pixels*number_pixels_fft_1d; i++){
+  // for (int i=0; i<n_pixels*n_pixels_fft_1d; i++){
 
   //   ctf_file << CTF[i][0] << std::endl;
   // }
   // ctf_file.close();
 
-   myfloat_t *localproj = (myfloat_t *) myfftw_malloc(sizeof(myfloat_t) * number_pixels * number_pixels);
+   myfloat_t *localproj = (myfloat_t *) myfftw_malloc(sizeof(myfloat_t) * n_pixels * n_pixels);
 
-  for (int i=0; i<number_pixels; i++){ 
-    for (int j=0; j<number_pixels; j++){
+  for (int i=0; i<n_pixels; i++){ 
+    for (int j=0; j<n_pixels; j++){
 
-      localproj[i * number_pixels + j] = Icalc[i][j];
+      localproj[i * n_pixels + j] = Icalc[i][j];
     }
   }
 
@@ -711,17 +515,17 @@ void Grad_cv::conv_proj_ctf(){
   myfloat_t *conv_proj_ctf;
 
   projFFT = (mycomplex_t *) myfftw_malloc(sizeof(mycomplex_t) *
-                                          number_pixels *
-                                          number_pixels);
+                                          n_pixels *
+                                          n_pixels);
 
   conv_proj_ctf = (myfloat_t *) myfftw_malloc(sizeof(myfloat_t) *
-                                           number_pixels *
-                                           number_pixels);
+                                           n_pixels *
+                                           n_pixels);
 
   myfftw_execute_dft_r2c(fft_plan_r2c_forward, localproj, projFFT);
 
   
-  for (int i=0; i<number_pixels * number_pixels_fft_1d; i++){
+  for (int i=0; i<n_pixels * n_pixels_fft_1d; i++){
 
     projFFT[i][0] = projFFT[i][0]*CTF[i][0] + projFFT[i][1]*CTF[i][1];
     projFFT[i][1] = projFFT[i][0]*CTF[i][1] - projFFT[i][1]*CTF[i][0];
@@ -729,12 +533,12 @@ void Grad_cv::conv_proj_ctf(){
 
   myfftw_execute_dft_c2r(fft_plan_c2r_backward, projFFT, conv_proj_ctf);
 
-  int norm = number_pixels * number_pixels;
+  int norm = n_pixels * n_pixels;
 
-  for (int i=0; i<number_pixels; i++){ 
-    for (int j=0; j<number_pixels; j++){
+  for (int i=0; i<n_pixels; i++){ 
+    for (int j=0; j<n_pixels; j++){
 
-      Icalc[i][j] = conv_proj_ctf[i * number_pixels + j]/norm;
+      Icalc[i][j] = conv_proj_ctf[i * n_pixels + j]/norm;
     }
   }
 
@@ -759,8 +563,8 @@ void Grad_cv::I_with_noise(mymatrix_t &I, myfloat_t std=0.1){
   std::normal_distribution<myfloat_t> dist(mean, std);
 
   // Add Gaussian noise
-  for (int i=0; i<number_pixels; i++){
-    for (int j=0; j<number_pixels; j++){
+  for (int i=0; i<n_pixels; i++){
+    for (int j=0; j<n_pixels; j++){
 
       I[i][j] += dist(generator);
     }
@@ -771,7 +575,7 @@ void Grad_cv::gaussian_normalization(){
 
   myfloat_t mu=0, var=0;
 
-  myfloat_t rad_sq = pixel_size * (number_pixels + 1) * 0.5;
+  myfloat_t rad_sq = pixel_size * (n_pixels + 1) * 0.5;
   rad_sq = rad_sq * rad_sq;
 
   std::vector <int> ins_circle;
@@ -796,8 +600,8 @@ void Grad_cv::gaussian_normalization(){
   I_with_noise(Icalc, var * SNR);
 
   mu = 0; var = 0;
-  for (int i=0; i<number_pixels; i++) {
-    for (int j=0; j<number_pixels; j++){
+  for (int i=0; i<n_pixels; i++) {
+    for (int j=0; j<n_pixels; j++){
 
       curr_float = Icalc[i][j];
       mu += curr_float;
@@ -805,13 +609,13 @@ void Grad_cv::gaussian_normalization(){
     }
   }
 
-  mu /= number_pixels*number_pixels;
-  var /= number_pixels*number_pixels;
+  mu /= n_pixels*n_pixels;
+  var /= n_pixels*n_pixels;
 
   var = std::sqrt(var - mu*mu);
 
-  for (int i=0; i<number_pixels; i++){
-    for (int j=0; j<number_pixels; j++){
+  for (int i=0; i<n_pixels; i++){
+    for (int j=0; j<n_pixels; j++){
 
       Icalc[i][j] = Icalc[i][j] / var;
     }
@@ -822,7 +626,7 @@ void Grad_cv::grad_run(){
 
 
   //Rotate the coordinates
-  //quaternion_rotation(quat, x_coord, y_coord, z_coord);
+  quaternion_rotation(quat, r_coord);
   
   std::cout << "\n Calculating CV and its gradient..." << std::endl;
 
@@ -831,34 +635,32 @@ void Grad_cv::grad_run(){
   //             Icalc, grad_x, grad_y, s_cv);
 
   //Uncomment if you want to use l2_norm
-  l2_norm(x_coord, y_coord, z_coord, 
-          Icalc, grad_x, grad_y, s_cv);
+  calc_I(r_coord, Icalc);
+  L2_grad(r_coord, Icalc, Iexp, grad_r, s_cv);
 
   std::cout <<"\n ...done" << std::endl;
   
   //Rotating gradient
   //quaternion_rotation(quat_inv, grad_x, grad_y, grad_z);
-  results_to_json(s_cv, grad_x, grad_y, grad_z);
+  results_to_json(s_cv, grad_r);
 }
 
 void Grad_cv::gen_run(bool use_qt){
 
-  Icalc = mymatrix_t(number_pixels, myvector_t(number_pixels, 0));
-  quat = myvector_t(4, 0.0);
+  Icalc = mymatrix_t(n_pixels, myvector_t(n_pixels, 0));
+  
   //Rotate the coordinates
    if (use_qt) {
     
     std::cout << "Using random quaternions: " << use_qt << std::endl;
-    quaternion_rotation(quat, x_coord, y_coord, z_coord);
+    quaternion_rotation(quat, r_coord);
   }
 
   else {quat = myvector_t(4, 0); quat_inv = myvector_t(4, 0);}
 
-
   std::cout << "\n Performing image projection ..." << std::endl;
-  calc_I(x_coord, y_coord, z_coord, Icalc);
+  calc_I(r_coord, Icalc);
   std::cout << "... done" << std::endl;
-
     
   //The convoluted image was written in Iexp because we need two images to test the cv and the gradient
   // std::cout << "\n Applying CTF to calcualted image ..." << std::endl;
@@ -871,62 +673,243 @@ void Grad_cv::gen_run(bool use_qt){
   std::cout << "\n The calculated image (with ctf) was saved in " << image_file << std::endl;
 }
 
-// Utilities
-void Grad_cv::where(myvector_t &inp_vec, std::vector<size_t> &out_vec, 
-                    myfloat_t x_res, myfloat_t limit){  
+void Grad_cv::parallel_run(){
+  
+  std::cout << "Running gradient for " << n_imgs << " images..." << std::endl;
+  
+  #pragma omp parallel
+  {
+    // Gradient variables
+    mymatrix_t r_cr_thr(n_atoms, myvector_t(3, 0.0));
+    mymatrix_t I_c_thr(n_pixels, myvector_t(n_pixels, 0.0));
+    mymatrix_t grad_thr(n_atoms, myvector_t(3, 0.0));
+    myfloat_t s_thr;
 
-    /**
-     * @brief Finds the indexes of the elements of a vector (x) that satisfy |x - x_res| <= limit
-     * 
-     * @param inp_vec vector of the elements to be evalutated
-     * @param out_vec vector to store the indices
-     * @param x_res value used to evaluate the condition (| x - x_res|)
-     * @param limit value used to compare the condition ( <= limit)
-     * 
-     * @return void
-     */
+    #pragma omp for
+    for (int i=0; i<n_imgs; i++){
 
-    //std::vector::iterator points to the position that satisfies the condition
-    auto it = std::find_if( std::begin(inp_vec), std::end(inp_vec ), 
-              [&](myfloat_t i){ return std::abs(i - x_res) <= limit; });
-    
-    //while the pointer doesn't point to the end of the vector
-    while (it != std::end(inp_vec)) {
+      quaternion_rotation(exp_imgs[i].q, r_coord, r_cr_thr);
 
-        //save the value of the last index found
-        out_vec.emplace_back(std::distance(std::begin(inp_vec), it));
+      calc_I(r_cr_thr, I_c_thr);
+      L2_grad(r_cr_thr, I_c_thr, exp_imgs[i].inten, grad_thr, s_thr);
+      quaternion_rotation(exp_imgs[i].q_inv, grad_thr);
 
-        //calculate the next item that satisfies the condition
-        it = std::find_if(std::next(it), std::end(inp_vec), 
-             [&](myfloat_t i){return std::abs(i - x_res) <= limit;});
-    }
-}
+      I_c_thr = mymatrix_t(n_pixels, myvector_t(n_pixels, 0.0));
 
-void Grad_cv::where(myvector_t &x_vec, myvector_t &y_vec,
-                    std::vector<int> &out_vec, myfloat_t radius){                       
-    /**
-     * @brief Finds the indexes of the elements of a vector (x) that satisfy |x - x_res| <= limit
-     * 
-     * @param inp_vec vector of the elements to be evalutated
-     * @param out_vec vector to store the indices
-     * @param x_res value used to evaluate the condition (| x - x_res|)
-     * @param limit value used to compare the condition ( <= limit)
-     * 
-     * @return void
-     */
+      #pragma omp critical
+      {
+        for (int j=0; j<n_atoms; j++){
 
-    for (int i=0; i<number_pixels; i++){
-      for (int j=0; j<number_pixels; j++){
+          grad_r[j][0] += grad_thr[j][0];
+          grad_r[j][1] += grad_thr[j][1];
+          grad_r[j][2] += grad_thr[j][2];
+        }
 
-        if ( x_vec[i]*x_vec[i] + y_vec[j]*y_vec[j] <= radius){
-
-          out_vec.push_back(i);
-          out_vec.push_back(j);
+        s_cv += s_thr;
       }
     }
   }
+
+  std::cout << "...done" << std::endl;
+  results_to_json(s_cv, grad_r);
+  std::cout << "Results saved." << std::endl;
 }
 
+void Grad_cv::test_parallel_num(){
+  
+  //std::cout << "Running gradient for " << n_imgs << " images..." << std::endl;
+  
+  #pragma omp parallel
+  {
+    // Gradient variables
+    mymatrix_t r_cr_thr(n_atoms, myvector_t(3, 0.0));
+    mymatrix_t I_c_thr(n_pixels, myvector_t(n_pixels, 0.0));
+    mymatrix_t grad_thr(n_atoms, myvector_t(3, 0.0));
+    myfloat_t s_thr;
+
+    #pragma omp for
+    for (int i=0; i<n_imgs; i++){
+
+      quaternion_rotation(exp_imgs[i].q, r_coord, r_cr_thr);
+
+      calc_I(r_cr_thr, I_c_thr);
+      L2_grad(r_cr_thr, I_c_thr, exp_imgs[i].inten, grad_thr, s_thr);
+      quaternion_rotation(exp_imgs[i].q_inv, grad_thr);
+
+      I_c_thr = mymatrix_t(n_pixels, myvector_t(n_pixels, 0.0));
+
+      #pragma omp critical
+      {
+        for (int j=0; j<n_atoms; j++){
+
+          grad_r[j][0] += grad_thr[j][0];
+          grad_r[j][1] += grad_thr[j][1];
+          grad_r[j][2] += grad_thr[j][2];
+        }
+
+        s_cv += s_thr;
+      }
+    }
+  }
+
+  myfloat_t s1 = s_cv; s_cv = 0;
+  myfloat_t dt = 0.0001;
+  int index = 13;
+
+  grad_r = mymatrix_t(n_atoms, myvector_t(3, 0.0));
+  r_coord[index][0] += dt;
+
+#pragma omp parallel
+  {
+    // Gradient variables
+    mymatrix_t r_cr_thr(n_atoms, myvector_t(3, 0.0));
+    mymatrix_t I_c_thr(n_pixels, myvector_t(n_pixels, 0.0));
+    mymatrix_t grad_thr(n_atoms, myvector_t(3, 0.0));
+    myfloat_t s_thr;
+
+    #pragma omp for
+    for (int i=0; i<n_imgs; i++){
+
+      quaternion_rotation(exp_imgs[i].q, r_coord, r_cr_thr);
+
+      calc_I(r_cr_thr, I_c_thr);
+      L2_grad(r_cr_thr, I_c_thr, exp_imgs[i].inten, grad_thr, s_thr);
+      quaternion_rotation(exp_imgs[i].q_inv, grad_thr);
+
+      I_c_thr = mymatrix_t(n_pixels, myvector_t(n_pixels, 0.0));
+
+      // #pragma omp critical
+      // {
+        for (int j=0; j<n_atoms; j++){
+
+          grad_r[j][0] += grad_thr[j][0];
+          grad_r[j][1] += grad_thr[j][1];
+          grad_r[j][2] += grad_thr[j][2];
+        }
+
+        s_cv += s_thr;
+      //}
+      grad_thr = mymatrix_t(n_atoms, myvector_t(3, 0.0));
+    }
+  }
+  myfloat_t s2 = s_cv;
+  myfloat_t num_grad = (s2 - s1)/dt;
+
+  std::cout.precision(10);                                                                                                                                              
+  std::cout << s1 << ", " << s2 << std::endl;                                                                                                                           
+  std::cout << std::scientific << "grad_A: " << grad_r[index][0] << "\n"                                                                                                   
+            << "grad_N: " << num_grad << std::endl;                                                                                                                     
+
+
+
+  // std::cout << "...done" << std::endl;
+  // results_to_json(s_cv, grad_r);
+  // std::cout << "Results saved." << std::endl;
+}
+
+void Grad_cv::test_parallel_time(){
+  
+  std::cout << "Running gradient for " << n_imgs << " images..." << std::endl;
+  std::chrono::time_point start1 = std::chrono::high_resolution_clock::now();
+
+  
+  int nt = (n_imgs < 8 ? n_imgs : 8);
+
+  #pragma omp parallel num_threads(nt)
+  {
+
+    // Gradient variables
+    mymatrix_t r_cr_thr(n_atoms, myvector_t(3, 0.0));
+    mymatrix_t I_c_thr(n_pixels, myvector_t(n_pixels, 0.0));
+    mymatrix_t grad_thr(n_atoms, myvector_t(3, 0.0));
+    myfloat_t s_thr;
+
+    for (int k=0; k<1000; k++){
+    
+      s_cv = 0;
+      //grad_r = mymatrix_t(n_atoms, myvector_t(3, 0.0));
+      std::fill(grad_r.begin(), grad_r.end(), myvector_t(3, 0.0));
+
+      #pragma omp for
+      for (int i=0; i<n_imgs; i++){
+
+        std::fill(I_c_thr.begin(), I_c_thr.end(), myvector_t(n_pixels, 0.0));
+
+        quaternion_rotation(exp_imgs[i].q, r_coord, r_cr_thr);
+
+        calc_I(r_cr_thr, I_c_thr);
+        L2_grad(r_cr_thr, I_c_thr, exp_imgs[i].inten, grad_thr, s_thr);
+        quaternion_rotation(exp_imgs[i].q_inv, grad_thr);
+
+        // I_c_thr = mymatrix_t(n_pixels, myvector_t(n_pixels, 0.0));
+        
+
+        #pragma omp critical
+        {
+      
+          for (int j=0; j<n_atoms; j++){
+            
+            grad_r[j][0] += grad_thr[j][0];
+            grad_r[j][1] += grad_thr[j][1];
+            grad_r[j][2] += grad_thr[j][2];
+          }
+
+          s_cv += s_thr;
+        }
+
+      }
+    }
+  }
+  
+  auto end1 = std::chrono::high_resolution_clock::now();
+  auto duration1 = std::chrono::duration_cast<std::chrono::microseconds>(end1 - start1);
+  
+  std::cout << "Parallel time: " << duration1.count()/1000 << " µs"<< std::endl;
+}
+
+void Grad_cv::test_serial_time(){
+  
+  std::cout << "Running gradient for " << n_imgs << " images..." << std::endl;
+  auto start1 = std::chrono::high_resolution_clock::now();
+
+  // Gradient variables
+  mymatrix_t r_cr(n_atoms, myvector_t(3, 0.0));
+  
+  mymatrix_t grad_it(n_atoms, myvector_t(3, 0.0));
+  myfloat_t s_it;
+  mymatrix_t I_c(n_pixels, myvector_t(n_pixels, 0.0));
+
+  for (int j=0; j<1000; j++){
+  
+    s_cv = 0;
+    grad_r = mymatrix_t(n_atoms, myvector_t(3, 0.0));
+
+    for (int i=0; i<n_imgs; i++){
+
+      quaternion_rotation(exp_imgs[i].q, r_coord, r_cr);
+
+      calc_I(r_cr, I_c);
+      L2_grad(r_cr, I_c, exp_imgs[i].inten, grad_it, s_it);
+      quaternion_rotation(exp_imgs[i].q_inv, grad_it);
+
+      for (int j=0; j<n_atoms; j++){
+
+        grad_r[j][0] += grad_it[j][0];
+        grad_r[j][1] += grad_it[j][1];
+        grad_r[j][2] += grad_it[j][2];
+      }
+
+      s_cv += s_it;
+      I_c = mymatrix_t(n_pixels, myvector_t(n_pixels, 0.0));
+    }
+  }
+  
+  auto end1 = std::chrono::high_resolution_clock::now();
+  auto duration1 = std::chrono::duration_cast<std::chrono::microseconds>(end1 - start1);
+  
+  std::cout << "Serial time: " << duration1.count()/1000 << " µs"<< std::endl;
+}
+// Utilities
 void Grad_cv::arange(myvector_t &out_vec, myfloat_t xo, myfloat_t xf, myfloat_t dx){
 
     /**
@@ -960,17 +943,17 @@ void Grad_cv::print_image(mymatrix_t &Im, std::string fname){
     matrix_file << std::scientific << std::showpos << quat[i] << " \n";
   }
 
-  for (int i=0; i<number_pixels; i++){
-    for (int j=0; j<number_pixels; j++){
+  for (int i=0; i<n_pixels; i++){
+    for (int j=0; j<n_pixels; j++){
 
-      matrix_file << std::scientific << std::showpos << Im[i][j] << " " << " \n"[j==number_pixels-1];
+      matrix_file << std::scientific << std::showpos << Im[i][j] << " " << " \n"[j==n_pixels-1];
     }
   }
 
   matrix_file.close();
 }
 
-void Grad_cv::read_exp_img(std::string fname){
+void Grad_cv::read_exp_img(std::string fname, myimage_t *IMG){
 
   std::ifstream file;
   file.open(fname);
@@ -980,31 +963,33 @@ void Grad_cv::read_exp_img(std::string fname){
   }
 
   //Read defocus
-  file >> defocus;
+  file >> IMG->defocus;
   
-  //Read quaternions
-  for (int i=0; i<4; i++) file >> quat[i];
+  // Read quaternions
+  for (int i=0; i<4; i++) file >> IMG->q[i];
 
-    //Create inverse quat
-  quat_inv = myvector_t(4, 0);
+  // Fill inverse quat
+  myfloat_t quat_abs = IMG->q[0] * IMG->q[0] + 
+                       IMG->q[1] * IMG->q[1] +
+                       IMG->q[2] * IMG->q[2] +
+                       IMG->q[3] * IMG->q[3];
 
-  float quat_abs = quat[0]*quat[0] + 
-                   quat[1]*quat[1] +
-                   quat[2]*quat[2] +
-                   quat[3]*quat[3];
+  if (quat_abs > 0.0){
 
-  quat_inv[0] = -quat[0] / quat_abs;
-  quat_inv[1] = -quat[1] / quat_abs;
-  quat_inv[2] = -quat[2] / quat_abs;
-  quat_inv[3] =  quat[3] / quat_abs;
+    IMG->q_inv[0] = -IMG->q[0] / quat_abs;
+    IMG->q_inv[1] = -IMG->q[1] / quat_abs;
+    IMG->q_inv[2] = -IMG->q[2] / quat_abs;
+    IMG->q_inv[3] =  IMG->q[3] / quat_abs;
+  }
 
   //Read image
-  for (int i=0; i<number_pixels; i++){
-    for (int j=0; j<number_pixels; j++){
+  for (int i=0; i<n_pixels; i++){
+    for (int j=0; j<n_pixels; j++){
 
-      file >> Iexp[i][j];
+      file >> IMG->inten[i][j];
     }
   }
+  file.close();
 }
 
 int Grad_cv::read_parameters(std::string fileinput){ 
@@ -1031,6 +1016,16 @@ int Grad_cv::read_parameters(std::string fileinput){
       // comment or blank line
     }
 
+    else if (strcmp(token, "N_IMGS") == 0){
+      token = strtok(NULL, " ");
+      n_imgs = atoi(token);
+
+      if (n_imgs <= 0) myError("Invalid number of images");
+      std::cout << "Number of images " << n_imgs << "\n";
+
+      yesNimgs = true;
+    }
+
     else if (strcmp(token, "PIXEL_SIZE") == 0){
       token = strtok(NULL, " ");
       pixel_size = atof(token);
@@ -1044,14 +1039,14 @@ int Grad_cv::read_parameters(std::string fileinput){
     else if (strcmp(token, "NUMBER_PIXELS") == 0){
       
       token = strtok(NULL, " ");
-      number_pixels = int(atoi(token));
+      n_pixels = int(atoi(token));
 
-      if (number_pixels < 0){
+      if (n_pixels < 0){
 
         myError("Negative Number of Pixels");
       }
 
-      std::cout << "Number of Pixels " << number_pixels << "\n";
+      std::cout << "Number of Pixels " << n_pixels << "\n";
       yesNumPix = true;
     }
     // CTF PARAMETERS
@@ -1131,11 +1126,14 @@ int Grad_cv::read_parameters(std::string fileinput){
   }
   input.close();
 
+  if (not(yesNimgs)){
+    myError("Input missing: please provide N_IMGS");
+  }
   if (not(yesPixSi)){
     myError("Input missing: please provide PIXEL_SIZE");
   }
   if (not(yesNumPix)){
-    myError("Input missing: please provide NUMBER_PIXELS");
+    myError("Input missing: please provide n_pixels");
   }
   if (not(yesBFact)){
     myError("Input missing: please provide CTF_ENV");
@@ -1161,7 +1159,7 @@ int Grad_cv::read_parameters(std::string fileinput){
   return 0;
 }
 
-void Grad_cv::results_to_json(myfloat_t s, myfloat_t* sgrad_x, myfloat_t* sgrad_y, myfloat_t* sgrad_z) {
+void Grad_cv::results_to_json(myfloat_t s, mymatrix_t &sgrad){
 
   std::ofstream gradfile;
 
@@ -1184,12 +1182,12 @@ void Grad_cv::results_to_json(myfloat_t s, myfloat_t* sgrad_x, myfloat_t* sgrad_
 
     if (j == n_atoms - 1) {
 
-      gradfile << std::setw(17) << std::left << " " << sgrad_x[j]
+      gradfile << std::setw(17) << std::left << " " << sgrad[j][0]
                << std::endl;
     }
 
     else {
-      gradfile << std::setw(17) << std::left << " " << sgrad_x[j] << ","
+      gradfile << std::setw(17) << std::left << " " << sgrad[j][0] << ","
                << std::endl;
     }
   }
@@ -1206,12 +1204,12 @@ void Grad_cv::results_to_json(myfloat_t s, myfloat_t* sgrad_x, myfloat_t* sgrad_
 
     if (j == n_atoms - 1) {
 
-      gradfile << std::setw(17) << std::left << " " << sgrad_y[j]
+      gradfile << std::setw(17) << std::left << " " << sgrad[j][1]
                << std::endl;
     }
 
     else {
-      gradfile << std::setw(17) << std::left << " " << sgrad_y[j] << ","
+      gradfile << std::setw(17) << std::left << " " << sgrad[j][1] << ","
                << std::endl;
     }
   }
@@ -1229,12 +1227,12 @@ void Grad_cv::results_to_json(myfloat_t s, myfloat_t* sgrad_x, myfloat_t* sgrad_
 
     if (j == n_atoms - 1) {
 
-      gradfile << std::setw(17) << std::left << " " << sgrad_z[j]
+      gradfile << std::setw(17) << std::left << " " << sgrad[j][2]
                << std::endl;
     }
 
     else {
-      gradfile << std::setw(17) << std::left << " " << sgrad_z[j] << ","
+      gradfile << std::setw(17) << std::left << " " << sgrad[j][2] << ","
                << std::endl;
     }
   }
@@ -1262,3 +1260,27 @@ void Grad_cv::release_FFT_plans(){
   fft_plans_created = 0;
 }
 
+void Grad_cv::where(myvector_t &x_vec, myvector_t &y_vec,
+                    std::vector<int> &out_vec, myfloat_t radius){                       
+    /**
+     * @brief Finds the indexes of the elements of a vector (x) that satisfy |x - x_res| <= limit
+     * 
+     * @param inp_vec vector of the elements to be evalutated
+     * @param out_vec vector to store the indices
+     * @param x_res value used to evaluate the condition (| x - x_res|)
+     * @param limit value used to compare the condition ( <= limit)
+     * 
+     * @return void
+     */
+
+    for (int i=0; i<n_pixels; i++){
+      for (int j=0; j<n_pixels; j++){
+
+        if ( x_vec[i]*x_vec[i] + y_vec[j]*y_vec[j] <= radius){
+
+          out_vec.push_back(i);
+          out_vec.push_back(j);
+      }
+    }
+  }
+}

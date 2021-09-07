@@ -8,7 +8,7 @@ import argparse
 
 def gen_img(index):
 
-        os.system(f"./gradcv.out {index} -gen -nqt > /dev/null 2>&1")
+        os.system(f"./gradcv.out {index} -gen -qt > /dev/null 2>&1")
         return 1
 
 class img_generator:

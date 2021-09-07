@@ -44,6 +44,16 @@ typedef myfloat_t mycomplex_t[2];
 typedef std::vector <myfloat_t> myvector_t;
 typedef std::vector <myvector_t> mymatrix_t;
 
+struct image {
+  myfloat_t defocus;
+  myvector_t q = myvector_t(4, 0.0);
+  myvector_t q_inv = myvector_t(4, 0);
+  mymatrix_t inten;
+};
+
+typedef struct image myimage_t;
+typedef std::vector<myimage_t> mydataset_t;
+
 #define myfftw_malloc fftw_malloc
 #define myfftw_free fftw_free
 #define myfftw_destroy_plan fftw_destroy_plan
@@ -76,7 +86,7 @@ class Grad_cv {
   const char *p_type;
 
   //***************** Declare variables
-  int number_pixels, number_pixels_fft_1d, sigma_reach, n_atoms;
+  int n_pixels, n_pixels_fft_1d, sigma_reach, n_atoms, n_neigh, n_imgs;
   myfloat_t pixel_size, sigma_cv;
   myfloat_t b_factor, defocus, CTF_amp, phase, min_defocus, max_defocus;
   myfloat_t norm;
@@ -84,6 +94,7 @@ class Grad_cv {
   myvector_t quat, quat_inv;
 
   //***************** Control for parameters
+  bool yesNimgs = false;
   bool yesPixSi = false;
   bool yesNumPix = false;
   bool yesBFact = false;
@@ -106,11 +117,10 @@ class Grad_cv {
   
 
   //coordinates 
-  myvector_t x_coord;
-  myvector_t y_coord;
-  myvector_t z_coord;
+  mymatrix_t r_coord;
 
   //grid
+  myfloat_t grid_min, grid_max;
   myvector_t x;
   myvector_t y;
 
@@ -118,12 +128,12 @@ class Grad_cv {
   //projections and gradients
   myfloat_t s_cv;
 
-  myfloat_t* grad_x;
-  myfloat_t* grad_y;
-  myfloat_t* grad_z;
+  mymatrix_t grad_r;
 
   mymatrix_t Icalc;
   mymatrix_t Iexp;
+
+  mydataset_t exp_imgs;
 
   int fft_plans_created = 0;
   myfftw_plan fft_plan_r2c_forward, fft_plan_c2r_backward;
@@ -141,17 +151,16 @@ public:
   void prepare_FFTs();
 
   void read_coord();
-  void center_coord(myvector_t &, myvector_t &, myvector_t &);
-  void quaternion_rotation(myvector_t &, myvector_t &, myvector_t &, myvector_t &);
-  void quaternion_rotation(myvector_t &, myfloat_t*, myfloat_t*, myfloat_t*);
+  void quaternion_rotation(myvector_t &, mymatrix_t &, mymatrix_t &);
+  void quaternion_rotation(myvector_t &, mymatrix_t &);
 
   void correlation(myvector_t &, myvector_t &, myvector_t &,
                    mymatrix_t &, myfloat_t *, myfloat_t *, myfloat_t &);
 
-  void l2_norm(myvector_t &, myvector_t &, myvector_t &,
-               mymatrix_t &, myfloat_t *, myfloat_t *, myfloat_t &);
+  void L2_grad(mymatrix_t &, mymatrix_t &, mymatrix_t &,
+               mymatrix_t &, myfloat_t &);
 
-  void calc_I(myvector_t &, myvector_t &, myvector_t &, mymatrix_t &);
+  void calc_I(mymatrix_t &, mymatrix_t &);
 
   void calc_ctf(mycomplex_t*);
   void conv_proj_ctf();
@@ -160,17 +169,20 @@ public:
   void gaussian_normalization();
 
   void grad_run();
+  void parallel_run();
+  void test_parallel_num();
+  void test_parallel_time();
+  void test_serial_time();
   void gen_run(bool);
 
   //Utilities
   void arange(myvector_t &, myfloat_t, myfloat_t, myfloat_t);
-
-  void where(myvector_t &, std::vector<size_t> &, myfloat_t, myfloat_t);
-  void where(myvector_t &, myvector_t &, std::vector<int> &, myfloat_t);
+  void where(myvector_t &, myvector_t &,
+                    std::vector<int> &, myfloat_t);
 
   void print_image(mymatrix_t &, std::string);
-  void read_exp_img(std::string);
+  void read_exp_img(std::string, myimage_t *);
   int read_parameters(std::string);
-  void results_to_json(myfloat_t, myfloat_t*, myfloat_t*, myfloat_t*);
+  void results_to_json(myfloat_t, mymatrix_t &);
 };
 #endif

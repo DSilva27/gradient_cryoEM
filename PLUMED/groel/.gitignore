@@ -1,0 +1,7 @@
+*.xtc
+*.xyz
+*.pdb
+*.txt
+bck*
+index.ndx
+COLVAR
