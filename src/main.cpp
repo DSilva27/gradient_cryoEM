@@ -17,8 +17,8 @@ int main(int argc, char* argv[]){
   test.init_variables(param_file, coord_file, out_im_file, out_json_file, "G");
   //test.gen_run(true);
   //test.parallel_run();
-  //test.test_parallel_num();
-  test.test_parallel_time();
+  test.test_parallel_num();
+  //test.test_parallel_time();
   //test.test_serial_time();
 
   // test.init_variables(param_file, coord_file, out_im_file, out_json_file, "D");

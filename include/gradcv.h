@@ -48,7 +48,7 @@ struct image {
   myfloat_t defocus;
   myvector_t q = myvector_t(4, 0.0);
   myvector_t q_inv = myvector_t(4, 0);
-  mymatrix_t inten;
+  myvector_t inten;
 };
 
 typedef struct image myimage_t;
@@ -117,21 +117,20 @@ class Grad_cv {
   
 
   //coordinates 
-  mymatrix_t r_coord;
+  myvector_t r_coord;
 
   //grid
   myfloat_t grid_min, grid_max;
-  myvector_t x;
-  myvector_t y;
+  myvector_t grid;
 
 
   //projections and gradients
   myfloat_t s_cv;
 
-  mymatrix_t grad_r;
+  myvector_t grad_r;
 
-  mymatrix_t Icalc;
-  mymatrix_t Iexp;
+  myvector_t Icalc;
+  myvector_t Iexp;
 
   mydataset_t exp_imgs;
 
@@ -151,21 +150,21 @@ public:
   void prepare_FFTs();
 
   void read_coord();
-  void quaternion_rotation(myvector_t &, mymatrix_t &, mymatrix_t &);
-  void quaternion_rotation(myvector_t &, mymatrix_t &);
+  void quaternion_rotation(myvector_t &, myvector_t &, myvector_t &);
+  void quaternion_rotation(myvector_t &, myvector_t &);
 
   void correlation(myvector_t &, myvector_t &, myvector_t &,
                    mymatrix_t &, myfloat_t *, myfloat_t *, myfloat_t &);
 
-  void L2_grad(mymatrix_t &, mymatrix_t &, mymatrix_t &,
-               mymatrix_t &, myfloat_t &);
+  void L2_grad(myvector_t &, myvector_t &, myvector_t &,
+               myvector_t &, myfloat_t &);
 
-  void calc_I(mymatrix_t &, mymatrix_t &);
+  void calc_I(myvector_t &, myvector_t &);
 
   void calc_ctf(mycomplex_t*);
   void conv_proj_ctf();
   
-  void I_with_noise(mymatrix_t &, myfloat_t);
+  void I_with_noise(myvector_t &, myfloat_t);
   void gaussian_normalization();
 
   void grad_run();
@@ -180,9 +179,9 @@ public:
   void where(myvector_t &, myvector_t &,
                     std::vector<int> &, myfloat_t);
 
-  void print_image(mymatrix_t &, std::string);
+  void print_image(myvector_t &, std::string);
   void read_exp_img(std::string, myimage_t *);
   int read_parameters(std::string);
-  void results_to_json(myfloat_t, mymatrix_t &);
+  void results_to_json(myfloat_t, myvector_t &);
 };
 #endif
