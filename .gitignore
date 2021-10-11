@@ -37,3 +37,4 @@
 experiments/
 venvs/
 grad_lib/__pycache__
+PLUMED/
