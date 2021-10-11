@@ -231,7 +231,7 @@ def grad_descent_cpp(*args):
     if (nranks > 1):
         string = (
             f"mpirun -n {nranks} "
-            f"./mpi_test.out grad_descent "
+            f"./gradcv.out grad_descent "
             f"-f {coord_file} -p {param_file} -out_pfx {out_pfx} "
             f"-n_imgs {n_imgs} -img_pfx {img_pfx} "
             f"-nsteps {nsteps} -stride {stride} "
@@ -240,7 +240,7 @@ def grad_descent_cpp(*args):
 
     else:
         string = (
-            f"./mpi_test.out grad_descent "
+            f"./gradcv.out grad_descent "
             f"-f {coord_file} -p {param_file} -out_pfx {out_pfx} "
             f"-n_imgs {n_imgs} -img_pfx {img_pfx} "
             f"-nsteps {nsteps} -stride {stride} "

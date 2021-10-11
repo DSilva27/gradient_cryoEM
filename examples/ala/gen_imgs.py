@@ -99,8 +99,6 @@ ref_system_mda = center_system(ref_system_mda) # Center your coordinates if they
 select_filter = "not name *H*" # Change if needed (defines which atoms are selected from the pdb)
 ref_sys = ref_system_mda.select_atoms(select_filter).positions.T # This returns a numpy array of shape (3, # atoms)
 
-ref_sys = np.loadtxt("ref_filename.txt", skiprows=1)
-
 ##############################################################################################################################
 
 np.random.seed(0) # Uncomment if doing debugging
@@ -123,12 +121,12 @@ N_PIXELS = 32
 PIXEL_SIZE = 0.5
 SIGMA = 0.5
 SNR = 0.0 # Unused at the moment
-IMG_PFX = "pfx_img_" #images will be called pfx_img_0.txt, pfx_img_1.txt, ...
+IMG_PFX = "ala_img_" #images will be called pfx_img_0.txt, pfx_img_1.txt, ...
 N_IMGS = 3 # Only used when creating images with random quaternions (to be implemented)
 
 # Create/Load images
 # TODO Replace this function with the c++ code
-dataset = create_images(ref_sys, quat, N_PIXELS, PIXEL_SIZE, SIGMA, SNR, IMG_PFX, True) # images created = # quats
+dataset = create_images(ref_sys, quat, N_PIXELS, PIXEL_SIZE, SIGMA, SNR, prefix=IMG_PFX, print_imgs=True) # images created = # quats
 
 # Print initial images 
 # fig, ax_imgs = plt.subplots(1, 3, figsize=(16,9))

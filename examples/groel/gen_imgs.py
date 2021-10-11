@@ -126,7 +126,7 @@ N_IMGS = 3 # Only used when creating images with random quaternions (to be imple
 
 # Create/Load images
 # TODO Replace this function with the c++ code
-dataset = create_images(ref_sys, quat, N_PIXELS, PIXEL_SIZE, SIGMA, SNR, IMG_PFX, True) # images created = # quats
+dataset = create_images(ref_sys, quat, N_PIXELS, PIXEL_SIZE, SIGMA, SNR, prefix=IMG_PFX, print_imgs=True) # images created = # quats
 
 # Print initial images 
 # fig, ax_imgs = plt.subplots(1, 3, figsize=(16,9))
