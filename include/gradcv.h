@@ -3,71 +3,68 @@
 
 #define _USE_MATH_DEFINES
 
-#include <iostream>
-#include <iomanip>
-#include <string> 
-#include <fstream>
-#include <vector>
-#include <cmath>
-#include <algorithm>
-#include <random>
-#include <cstdlib>
-#include <filesystem>
-
+#include <mpi.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
+#include <omp.h>
 #include <math.h>
-#include <fftw3.h>
-#include <mpi.h>
 
-
-// **************** DEFINITIONS ***********************
-// typedef float myfloat_t;
-// typedef myfloat_t mycomplex_t[2];
-// typedef std::vector <myfloat_t> myvector_t;
-// typedef std::vector <myvector_t> mymatrix_t;
-
-// #define myfftw_malloc fftwf_malloc
-// #define myfftw_free fftwf_free
-// #define myfftw_destroy_plan fftwf_destroy_plan
-// #define myfftw_execute_dft_r2c fftwf_execute_dft_r2c
-// #define myfftw_execute_dft_c2r fftwf_execute_dft_c2r
-// #define myfftw_plan_dft_r2c_2d fftwf_plan_dft_r2c_2d
-// #define myfftw_plan_dft_c2r_2d fftwf_plan_dft_c2r_2d
-// #define myfftw_plan fftwf_plan
-// #define myfftw_cleanup fftwf_cleanup
-// #define myfftw_import_wisdom_from_filename fftwf_import_wisdom_from_filename
-// #define myfftw_export_wisdom_to_filename fftwf_export_wisdom_to_filename
+#include <string>
+#include <vector>
+#include <fstream>
+#include <algorithm>
+#include <iomanip>
+#include <typeinfo>
+#include <thread>
+#include <random>
 
 typedef double myfloat_t;
 typedef myfloat_t mycomplex_t[2];
-typedef std::vector <myfloat_t> myvector_t;
-typedef std::vector <myvector_t> mymatrix_t;
+typedef std::vector<myfloat_t> myvector_t;
+typedef std::vector<myvector_t> mymatrix_t;
 
-typedef struct image {
-  myfloat_t defocus;
-  myvector_t q = myvector_t(4, 0.0);
-  myvector_t q_inv = myvector_t(4, 0);
-  myvector_t I;
-  std::string fname;
+typedef struct image{
+
+    myfloat_t defocus = 0;
+    myvector_t q = myvector_t(4, 0.0);
+    myvector_t q_inv = myvector_t(4, 0);
+    myvector_t I;
+
+    std::string fname;
 } myimage_t;
 
-//typedef struct image myimage_t;
+typedef struct param_device{
+
+  std::string mode;
+  int n_pixels, n_neigh, n_imgs, n_atoms;
+  myfloat_t pixel_size, sigma, cutoff, norm;
+  myfloat_t learn_rate, l2_weight, hm_weight;
+  
+  myvector_t grid;    
+
+  void calc_neigh(){
+    n_neigh = (int) std::ceil(sigma * cutoff / pixel_size);
+  }
+
+  void calc_norm(){
+    norm = 1. / (2*M_PI * sigma*sigma * n_atoms);
+  }
+
+  void gen_grid(){
+    grid.resize(n_pixels);
+    myfloat_t grid_min = -pixel_size * (n_pixels - 1)*0.5;
+    for (int i=0; i<n_pixels; i++) grid[i] = grid_min + pixel_size*i;
+  }
+
+} myparam_t;
+
+
 typedef std::vector<myimage_t> mydataset_t;
 
-#define myfftw_malloc fftw_malloc
-#define myfftw_free fftw_free
-#define myfftw_destroy_plan fftw_destroy_plan
-#define myfftw_execute_dft_r2c fftw_execute_dft_r2c
-#define myfftw_execute_dft_c2r fftw_execute_dft_c2r
-#define myfftw_plan_dft_r2c_2d fftw_plan_dft_r2c_2d
-#define myfftw_plan_dft_c2r_2d fftw_plan_dft_c2r_2d
-#define myfftw_plan fftw_plan
-#define myfftw_cleanup fftw_cleanup
-#define myfftw_import_wisdom_from_filename fftw_import_wisdom_from_filename
-#define myfftw_export_wisdom_to_filename fftw_export_wisdom_to_filename
-
+#pragma omp declare reduction(vec_float_plus : std::vector<myfloat_t> : \
+                              std::transform(omp_out.begin(), omp_out.end(), \
+                              omp_in.begin(), omp_out.begin(), std::plus<myfloat_t>())) \
+                              initializer(omp_priv = decltype(omp_orig)(omp_orig.size()))
 
 #define myError(error, ...)                                                    \
   {                                                                            \
@@ -79,105 +76,38 @@ typedef std::vector<myimage_t> mydataset_t;
     exit(1);                                                                   \
   }
 
+void parse_args(int, char**, int, int, std::string &, std::string &, 
+                std::string &, std::string &, std::string &, int &, 
+                int &, int &, int &);
+void read_coord(std::string, myvector_t &, int);
+void read_parameters(std::string, myparam_t *, int);
+void load_dataset(std::string, int, int, mydataset_t &, int, int);
+void read_exp_img(std::string, myimage_t *);
+void print_image(myimage_t *, int);
+void print_image(std::string, myvector_t &, int);
+void print_coords(std::string, myvector_t &, int);
+void where(myvector_t &, myvector_t &, std::vector<int> &, myfloat_t);                       
 
-class Grad_cv {
-    
- private:
-  
-  //***************** Declare variables
-  int n_pixels, n_pixels_fft_1d, sigma_reach, n_atoms, n_neigh, n_imgs;
-  myfloat_t pixel_size, sigma_cv;
-  myfloat_t b_factor, defocus, CTF_amp, phase, min_defocus, max_defocus;
-  myfloat_t norm;
+void quaternion_rotation(myvector_t &, myvector_t &, myvector_t &);
+void quaternion_rotation(myvector_t &, myvector_t &);
+void gaussian_normalization(myvector_t &, param_device *, myfloat_t);
 
-  //***************** Control for parameters
-  bool yesNimgs = false;
-  bool yesPixSi = false;
-  bool yesNumPix = false;
-  bool yesBFact = false;
-  bool yesAMP = false;
-  bool yesSigmaCV = false;
-  bool yesSigmaReach = false;
-  bool yesDefocus = false;
-  //***************** Default VALUES
-  myfloat_t elecwavel = 0.019866;
-  myfloat_t SNR = 1.0;
-  myfloat_t sqrt_2pi = std::sqrt(2. * M_PI);
-  
+void calc_img(myvector_t &, myvector_t &, myparam_t *);
+void calc_img_omp(myvector_t &, myvector_t &, myparam_t *, int);
 
+void L2_grad(myvector_t &, myvector_t &, myvector_t &, myvector_t &, myfloat_t &, myparam_t *);
+void L2_grad_omp(myvector_t &, myvector_t &, myvector_t &, myvector_t &, myfloat_t &, myparam_t *, int);
+void harm_pot(myvector_t &, myfloat_t, myfloat_t, myfloat_t &, myvector_t &, int);
 
-  //Name of files used
-  std::string params_file;
-  std::string coords_file;
-  std::string image_file;
-  std::string json_file;
-  
+void run_emgrad(std::string, std::string, int, int, int, int);
+void run_gen(std::string, std::string, int, int, int, int);
+void run_grad_descent(std::string, std::string, std::string, std::string, int, int, int, int, int, int);
 
-  //coordinates 
-  myvector_t r_coord;
+// Tests
+void run_num_test(std::string, std::string, int, int, int, int);
+void run_num_test_omp(std::string, std::string, int, int, int, int);
 
-  //grid
-  myfloat_t grid_min, grid_max;
-  myvector_t grid;
+void run_time_test(std::string, std::string, int, int, int, int);
+void run_time_test_omp(std::string, std::string, int, int, int, int);
 
-
-  //projections and gradients
-  myfloat_t s_cv;
-
-  myvector_t grad_r;
-
-  myvector_t Icalc;
-  myvector_t Iexp;
-
-  mydataset_t exp_imgs;
-
-  int fft_plans_created = 0;
-  myfftw_plan fft_plan_r2c_forward, fft_plan_c2r_backward;
-
-  void release_FFT_plans();
-
-public:
-
-  Grad_cv();
-  ~Grad_cv();
-
-  void init_variables(std::string, std::string, 
-                     int, std::string, int, int);
-  void prepare_FFTs();
-
-  void read_coord(myvector_t &, int &, std::string);
-  void quaternion_rotation(myvector_t &, myvector_t &, myvector_t &);
-  void quaternion_rotation(myvector_t &, myvector_t &);
-
-  void correlation(myvector_t &, myvector_t &, myvector_t &,
-                   mymatrix_t &, myfloat_t *, myfloat_t *, myfloat_t &);
-
-  void L2_grad(myvector_t &, myvector_t &, myvector_t &,
-               myvector_t &, myfloat_t &);
-
-  void calc_I(myvector_t &, myvector_t &);
-
-  void calc_ctf(mycomplex_t*);
-  void conv_proj_ctf();
-  
-  void I_with_noise(myvector_t &, myfloat_t);
-  void gaussian_normalization(myvector_t &);
-
-  void grad_run();
-  void parallel_run();
-  void test_parallel_num();
-  void test_parallel_time();
-  void test_serial_time();
-  void gen_run();
-
-  //Utilities
-  void arange(myvector_t &, myfloat_t, myfloat_t, myfloat_t);
-  void where(myvector_t &, myvector_t &,
-                    std::vector<int> &, myfloat_t);
-
-  void print_image(myimage_t *);
-  void read_exp_img(std::string, myimage_t *);
-  int read_parameters(std::string);
-  void results_to_json(myfloat_t, myvector_t &);
-};
 #endif
