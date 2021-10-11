@@ -19,6 +19,7 @@
 #include <string.h>
 #include <math.h>
 #include <fftw3.h>
+#include <mpi.h>
 
 
 // **************** DEFINITIONS ***********************
@@ -44,14 +45,15 @@ typedef myfloat_t mycomplex_t[2];
 typedef std::vector <myfloat_t> myvector_t;
 typedef std::vector <myvector_t> mymatrix_t;
 
-struct image {
+typedef struct image {
   myfloat_t defocus;
   myvector_t q = myvector_t(4, 0.0);
   myvector_t q_inv = myvector_t(4, 0);
-  myvector_t inten;
-};
+  myvector_t I;
+  std::string fname;
+} myimage_t;
 
-typedef struct image myimage_t;
+//typedef struct image myimage_t;
 typedef std::vector<myimage_t> mydataset_t;
 
 #define myfftw_malloc fftw_malloc
@@ -81,17 +83,12 @@ typedef std::vector<myimage_t> mydataset_t;
 class Grad_cv {
     
  private:
-
-  //Defines if the program shall create a database or calculate a gradient
-  const char *p_type;
-
+  
   //***************** Declare variables
   int n_pixels, n_pixels_fft_1d, sigma_reach, n_atoms, n_neigh, n_imgs;
   myfloat_t pixel_size, sigma_cv;
   myfloat_t b_factor, defocus, CTF_amp, phase, min_defocus, max_defocus;
   myfloat_t norm;
-  
-  myvector_t quat, quat_inv;
 
   //***************** Control for parameters
   bool yesNimgs = false;
@@ -142,14 +139,13 @@ class Grad_cv {
 public:
 
   Grad_cv();
-  //~Grad_cv();
+  ~Grad_cv();
 
   void init_variables(std::string, std::string, 
-                      std::string, std::string,
-                      const char *);
+                     int, std::string, int, int);
   void prepare_FFTs();
 
-  void read_coord();
+  void read_coord(myvector_t &, int &, std::string);
   void quaternion_rotation(myvector_t &, myvector_t &, myvector_t &);
   void quaternion_rotation(myvector_t &, myvector_t &);
 
@@ -165,21 +161,21 @@ public:
   void conv_proj_ctf();
   
   void I_with_noise(myvector_t &, myfloat_t);
-  void gaussian_normalization();
+  void gaussian_normalization(myvector_t &);
 
   void grad_run();
   void parallel_run();
   void test_parallel_num();
   void test_parallel_time();
   void test_serial_time();
-  void gen_run(bool);
+  void gen_run();
 
   //Utilities
   void arange(myvector_t &, myfloat_t, myfloat_t, myfloat_t);
   void where(myvector_t &, myvector_t &,
                     std::vector<int> &, myfloat_t);
 
-  void print_image(myvector_t &, std::string);
+  void print_image(myimage_t *);
   void read_exp_img(std::string, myimage_t *);
   int read_parameters(std::string);
   void results_to_json(myfloat_t, myvector_t &);

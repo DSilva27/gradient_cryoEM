@@ -8,85 +8,100 @@
 
 Grad_cv::Grad_cv(){}
 
-//Grad_cv::~Grad_cv(){}
+Grad_cv::~Grad_cv(){}
 
-void Grad_cv::init_variables(std::string pf, std::string cf, 
-                            std::string imf, std::string gradf,
-                            const char *type){
+void Grad_cv::init_variables(std::string coord_file, std::string img_prefix, 
+                            int n_im, std::string type, int rank, int world_size){
 
-  p_type = type;
 
-  params_file = "data/input/" + pf;
-  coords_file = "data/input/" + cf;
-  image_file = "data/images/" + imf;
-  json_file = "data/output/" + gradf;
+  params_file = "data/input/parameters.txt";
+  coords_file = "data/input/" + coord_file;
+  image_file = "data/images/" + img_prefix;
+  json_file = "data/output/" + img_prefix;
 
   //############################### Read parameters and coordinates #####################################
-  read_coord();
+  
+  if (rank==0){
+    read_coord(r_coord, n_atoms, coords_file);
+  } 
+  MPI_Bcast(&n_atoms, 1, MPI_INT, 0, MPI_COMM_WORLD);
+  //MPI_Barrier(MPI_COMM_WORLD);
+
+  if (rank != 0) r_coord.resize(3*n_atoms);
+
+  printf("Rank %d, n_atoms: %d\n", rank, r_coord.size());
+  
   read_parameters(params_file);
+
   n_pixels_fft_1d = n_pixels/2 + 1;
   n_neigh = (int) std::ceil(sigma_cv * sigma_reach / pixel_size);
+  printf("Rank %d, n_pixels: %d\n", rank, n_neigh);
+  n_imgs = n_im;
 
-  // Initialize and read experimental images
-  exp_imgs = mydataset_t(n_imgs);
+  int imgs_per_process = n_imgs/world_size;
 
-  for (int i = 0; i < n_imgs; i++){
-
-    exp_imgs[i].inten = myvector_t(n_pixels*n_pixels, 0.0);
-    read_exp_img("data/images/Icalc_"+std::to_string(i)+".txt", &exp_imgs[i]);
-  }
-
-  grad_r = myvector_t(3*n_atoms, 0.0);
+  if (imgs_per_process < 1) myError("The number of images must be bigger than the number of processes!")
+  
+  int start_img = rank*imgs_per_process;
+  int end_img = start_img + imgs_per_process;
 
   //If we are creating images
-  if (strcmp(p_type, "D") == 0){
+  if (type == "D"){
 
     //Generate random defocus and calculate the phase
     std::random_device seeder;
     std::mt19937 engine(seeder());
     std::uniform_real_distribution<myfloat_t> dist_def(min_defocus, max_defocus);
-    
-    defocus = dist_def(engine);
-    phase = defocus * M_PI * 2. * 10000 * elecwavel;
 
-    std::cout << "Defocus used: " << defocus << std::endl;
-
-      //############################ CALCULATING RANDOM QUATERNIONS #######################################
-    //Create a uniform distribution from 0 to 1
+    // Random dist for quaternions
+    // Create a uniform distribution from 0 to 1
     std::uniform_real_distribution<myfloat_t> dist_quat(0, 1);
     myfloat_t u1, u2, u3;
 
-      //Generate random numbers betwwen 0 and 1
-    u1 = dist_quat(engine); u2 = dist_quat(engine); u3 = dist_quat(engine);
-    quat = myvector_t(4, 0);
+    exp_imgs = mydataset_t(imgs_per_process);
 
-    //Random quaternion vector, check Shoemake, Graphic Gems III, p. 124-132
-    quat[0] = std::sqrt(1 - u1) * sin(2 * M_PI * u2);
-    quat[1] = std::sqrt(1 - u1) * cos(2 * M_PI * u2);
-    quat[2] = std::sqrt(u1) * sin(2 * M_PI * u3);
-    quat[3] = std::sqrt(u1) * cos(2 * M_PI * u3);
+    int counter = 0;
+    for (int i=start_img; i<end_img; i++){
+
+      exp_imgs[counter].defocus = dist_def(engine);
+      //phase = defocus * M_PI * 2. * 10000 * elecwavel;
+
+      // Generate random numbers betwwen 0 and 1
+      u1 = dist_quat(engine); u2 = dist_quat(engine); u3 = dist_quat(engine);
+
+      // Fill img structure with its quaternions
+      exp_imgs[counter].q[0] = std::sqrt(1 - u1) * sin(2 * M_PI * u2);
+      exp_imgs[counter].q[1] = std::sqrt(1 - u1) * cos(2 * M_PI * u2);
+      exp_imgs[counter].q[2] = std::sqrt(u1) * sin(2 * M_PI * u3);
+      exp_imgs[counter].q[3] = std::sqrt(u1) * cos(2 * M_PI * u3);
+
+      // Allocate memory for later
+      exp_imgs[counter].I = myvector_t(n_pixels*n_pixels, 0.0);
+
+      // Set image name
+      exp_imgs[counter].fname = image_file + std::to_string(i) + ".txt";
+
+      counter++;
+    }      
   } 
 
-/*   else if (strcmp(p_type, "G") == 0){
+  else if (type =="G"){
 
-    Iexp = mymatrix_t(n_pixels, myvector_t(n_pixels, 0));
-    quat = myvector_t(n_pixels, 0);
-    quat_inv = myvector_t(n_pixels, 0);
+    // Initialize and read experimental images
+    exp_imgs = mydataset_t(n_imgs);
 
-    
-    //Turn grad_* into a n_pixels vector and fill it with zeros
-    grad_r = mymatrix_t(n_atoms, myvector_t(3, 0.0));
+    for (int i = 0; i < n_imgs; i++){
 
-    std::cout << "Variables initialized" << std::endl;
+      exp_imgs[i].I = myvector_t(n_pixels*n_pixels, 0.0);
+      read_exp_img("data/images/Icalc_"+std::to_string(i)+".txt", &exp_imgs[i]);
+    }
 
-    //#################### Read experimental image (includes defocus and quaternions) ###########################
-    read_exp_img(image_file, defocus, quat, quat_inv, Iexp);
-    phase = defocus * M_PI * 2. * 10000 * elecwavel;
-  } */
+    grad_r = myvector_t(3*n_atoms, 0.0);
+  }
 
   //######################### Preparing FFTWs and allocating memory for images and gradients ##################
   //Prepare FFTs
-  prepare_FFTs();
+  //prepare_FFTs();
   
   //Calculate minimum and maximum values for the linspace-like vectors x and y
   grid_min = -pixel_size * (n_pixels - 1)*0.5;
@@ -100,10 +115,10 @@ void Grad_cv::init_variables(std::string pf, std::string cf,
 
   norm = 1. / (2*M_PI * sigma_cv*sigma_cv * n_atoms);
 
-  std::cout << "Variables initialized" << std::endl;
+  // std::cout << "Variables initialized" << std::endl;
 }
 
-void Grad_cv::read_coord(){
+void Grad_cv::read_coord(myvector_t &r_c, int &n_at, std::string coord_fname){
 
   /**
    * @brief reads data from a pdb and stores the coordinates in vectors
@@ -119,27 +134,26 @@ void Grad_cv::read_coord(){
   // ! It's just for testing
 
   std::ifstream coord_file;
-  coord_file.open(coords_file);
+  coord_file.open(coord_fname);//coord_fname);
 
-  std::cout << "\n +++++++++++++++++++++++++++++++++++++++++ \n";
-  std::cout << "\n   READING EM2D COORDINATES            \n\n";
-  std::cout << " +++++++++++++++++++++++++++++++++++++++++ \n";
+  // std::cout << "\n +++++++++++++++++++++++++++++++++++++++++ \n";
+  // std::cout << "\n   READING EM2D COORDINATES            \n\n";
+  // std::cout << " +++++++++++++++++++++++++++++++++++++++++ \n";
   
   if (!coord_file.good()){
-    myError("Opening file: %s", coords_file.c_str());
+    myError("Opening file: %s", coord_fname.c_str());
   }
 
-  coord_file >> n_atoms;
-  r_coord = myvector_t(3*n_atoms, 0.0);
+  coord_file >> n_at;
+  r_c = myvector_t(3*n_at, 0.0);
 
-  for (int i=0; i<3*n_atoms; i++){
+  for (int i=0; i<3*n_at; i++){
 
-    coord_file >> r_coord[i];
-  } 
+    coord_file >> r_c[i]; 
+  }
+  coord_file.close();
 
-  std::cout << "Number of atoms: " << n_atoms << std::endl;
-
-  std::cout << n_atoms << std::endl;
+  // std::cout << "Number of atoms: " << n_at << std::endl;
 }
 
 void Grad_cv::prepare_FFTs(){
@@ -386,62 +400,62 @@ void Grad_cv::calc_I(myvector_t &r_a, myvector_t &I_c){
    * 
    */
 
-  #pragma omp parallel
-  {
-    int m_x, m_y;
-    int ind_i, ind_j;
+  // #pragma omp parallel
+  // {
+  int m_x, m_y;
+  int ind_i, ind_j;
 
-    // std::vector<size_t> x_sel, y_sel;
-    myvector_t gauss_x(2*n_neigh+3, 0.0);
-    myvector_t gauss_y(2*n_neigh+3, 0.0);
+  // std::vector<size_t> x_sel, y_sel;
+  myvector_t gauss_x(2*n_neigh+3, 0.0);
+  myvector_t gauss_y(2*n_neigh+3, 0.0);
 
-    #pragma omp for reduction(vec_float_plus : I_c)
-    for (int atom=0; atom<n_atoms; atom++){
+  // #pragma omp for reduction(vec_float_plus : I_c)
+  for (int atom=0; atom<n_atoms; atom++){
 
-      m_x = (int) std::round(abs(r_a[atom] - grid_min)/pixel_size);
-      m_y = (int) std::round(abs(r_a[atom + n_atoms] - grid_min)/pixel_size);
+    m_x = (int) std::round(abs(r_a[atom] - grid_min)/pixel_size);
+    m_y = (int) std::round(abs(r_a[atom + n_atoms] - grid_min)/pixel_size);
 
-      #pragma omp simd
-      for (int i=0; i<=2*n_neigh+2; i++){
-        
-        ind_i = m_x - n_neigh - 1 + i;
-        ind_j = m_y - n_neigh - 1 + i;
+    // #pragma omp simd
+    for (int i=0; i<=2*n_neigh+2; i++){
+      
+      ind_i = m_x - n_neigh - 1 + i;
+      ind_j = m_y - n_neigh - 1 + i;
 
-        if (ind_i<0 || ind_i>=n_pixels) gauss_x[i] = 0;
-        else {
+      if (ind_i<0 || ind_i>=n_pixels) gauss_x[i] = 0;
+      else {
 
-          myfloat_t expon_x = (grid[ind_i] - r_a[atom])/sigma_cv;
-          gauss_x[i] = std::exp( -0.5 * expon_x * expon_x );
-        }
-              
-        if (ind_j<0 || ind_j>=n_pixels) gauss_y[i] = 0;
-        else{
-
-          myfloat_t expon_y = (grid[ind_j] - r_a[atom + n_atoms])/sigma_cv;
-          gauss_y[i] = std::exp( -0.5 * expon_y * expon_y );
-        }
+        myfloat_t expon_x = (grid[ind_i] - r_a[atom])/sigma_cv;
+        gauss_x[i] = std::exp( -0.5 * expon_x * expon_x );
       }
+            
+      if (ind_j<0 || ind_j>=n_pixels) gauss_y[i] = 0;
+      else{
 
-      //Calculate the image and the gradient
-      for (int i=0; i<=2*n_neigh+2; i++){
-        
-        ind_i = m_x - n_neigh - 1 + i;
-        if (ind_i<0 || ind_i>=n_pixels) continue;
-        
-        #pragma omp simd
-        for (int j=0; j<=2*n_neigh+2; j++){
-
-          ind_j = m_y - n_neigh - 1 + j;
-          if (ind_j<0 || ind_j>=n_pixels) continue;
-
-          I_c[ind_i*n_pixels + ind_j] += gauss_x[i]*gauss_y[j];
-        }
+        myfloat_t expon_y = (grid[ind_j] - r_a[atom + n_atoms])/sigma_cv;
+        gauss_y[i] = std::exp( -0.5 * expon_y * expon_y );
       }
     }
 
-    #pragma omp for simd
-    for (int i=0; i<n_pixels*n_pixels; i++) I_c[i] *= norm;
+    //Calculate the image and the gradient
+    for (int i=0; i<=2*n_neigh+2; i++){
+      
+      ind_i = m_x - n_neigh - 1 + i;
+      if (ind_i<0 || ind_i>=n_pixels) continue;
+      
+      // #pragma omp simd
+      for (int j=0; j<=2*n_neigh+2; j++){
+
+        ind_j = m_y - n_neigh - 1 + j;
+        if (ind_j<0 || ind_j>=n_pixels) continue;
+
+        I_c[ind_i*n_pixels + ind_j] += gauss_x[i]*gauss_y[j];
+      }
+    }
   }
+
+  // #pragma omp for simd
+  for (int i=0; i<n_pixels*n_pixels; i++) I_c[i] *= norm;
+  // }
 }
 
 void Grad_cv::calc_ctf(mycomplex_t* ctf){
@@ -519,8 +533,8 @@ void Grad_cv::conv_proj_ctf(){
   
   for (int i=0; i<n_pixels * n_pixels_fft_1d; i++){
 
-    projFFT[i][0] = projFFT[i][0]*CTF[i][0] + projFFT[i][1]*CTF[i][1];
-    projFFT[i][1] = projFFT[i][0]*CTF[i][1] - projFFT[i][1]*CTF[i][0];
+    projFFT[i][0] = projFFT[i][0]*CTF[i][0] - projFFT[i][1]*CTF[i][1];
+    projFFT[i][1] = projFFT[i][0]*CTF[i][1] + projFFT[i][1]*CTF[i][0];
   }
 
   myfftw_execute_dft_c2r(fft_plan_c2r_backward, projFFT, conv_proj_ctf);
@@ -559,7 +573,7 @@ void Grad_cv::I_with_noise(myvector_t &I, myfloat_t std=0.1){
   }
 }
 
-void Grad_cv::gaussian_normalization(){
+void Grad_cv::gaussian_normalization(myvector_t &I_c){
 
   myfloat_t mu=0, var=0;
 
@@ -574,7 +588,7 @@ void Grad_cv::gaussian_normalization(){
   //Calculate the mean
   for (int i=0; i<N; i++) {
 
-    curr_float = Icalc[ins_circle[i]*n_pixels + ins_circle[i+1]];
+    curr_float = I_c[ins_circle[i]*n_pixels + ins_circle[i+1]];
     mu += curr_float;
     var += curr_float * curr_float;
   }
@@ -584,13 +598,13 @@ void Grad_cv::gaussian_normalization(){
 
   var = std::sqrt(var - mu*mu);
 
-  //Add gaussian noise with std equal to the intensity variance of the image times the SNR
-  I_with_noise(Icalc, var * SNR);
+  //Add gaussian noise with std equal to the Isity variance of the image times the SNR
+  I_with_noise(I_c, var * SNR);
 
   mu = 0; var = 0;
   for (int i=0; i<n_pixels*n_pixels; i++) {
 
-    curr_float = Icalc[i];
+    curr_float = I_c[i];
     mu += curr_float;
     var += curr_float * curr_float;
   }
@@ -602,17 +616,17 @@ void Grad_cv::gaussian_normalization(){
 
   for (int i=0; i<n_pixels*n_pixels; i++){
 
-    Icalc[i] /= var;
+    I_c[i] /= var;
   }
 }
 
-void Grad_cv::grad_run(){
+/* void Grad_cv::grad_run(){
 
 
   //Rotate the coordinates
   quaternion_rotation(quat, r_coord);
   
-  std::cout << "\n Calculating CV and its gradient..." << std::endl;
+  // std::cout << "\n Calculating CV and its gradient..." << std::endl;
 
   // Comment if using l2-norm
   // correlation(x_coord, y_coord, z_coord, 
@@ -622,86 +636,73 @@ void Grad_cv::grad_run(){
   calc_I(r_coord, Icalc);
   L2_grad(r_coord, Icalc, Iexp, grad_r, s_cv);
 
-  std::cout <<"\n ...done" << std::endl;
+  // std::cout <<"\n ...done" << std::endl;
   
   //Rotating gradient
   //quaternion_rotation(quat_inv, grad_x, grad_y, grad_z);
   results_to_json(s_cv, grad_r);
-}
-
-void Grad_cv::gen_run(bool use_qt){
-
-  Icalc = myvector_t(n_pixels*n_pixels, 0);
-  
-  //Rotate the coordinates
-   if (use_qt) {
-    
-    std::cout << "Using random quaternions: " << use_qt << std::endl;
-    quaternion_rotation(quat, r_coord);
-  }
-
-  else {quat = myvector_t(4, 0); quat_inv = myvector_t(4, 0);}
-
-  std::cout << "\n Performing image projection ..." << std::endl;
-  calc_I(r_coord, Icalc);
-  std::cout << "... done" << std::endl;
-    
-  //The convoluted image was written in Iexp because we need two images to test the cv and the gradient
-  // std::cout << "\n Applying CTF to calcualted image ..." << std::endl;
-  // conv_proj_ctf();
-  // std::cout << "... done" << std::endl;
-
-  if (use_qt) gaussian_normalization();
-
-  print_image(Icalc, image_file);
-  std::cout << "\n The calculated image (with ctf) was saved in " << image_file << std::endl;
-}
-
-/* void Grad_cv::parallel_run(){
-  
-  std::cout << "Running gradient for " << n_imgs << " images..." << std::endl;
-  
-  #pragma omp parallel
-  {
-    // Gradient variables
-    mymatrix_t r_cr_thr(n_atoms, myvector_t(3, 0.0));
-    myvector_t I_c_thr(n_pixels*n_pixels, 0.0);
-    mymatrix_t grad_thr(n_atoms, myvector_t(3, 0.0));
-    myfloat_t s_thr;
-
-    #pragma omp for
-    for (int i=0; i<n_imgs; i++){
-
-      quaternion_rotation(exp_imgs[i].q, r_coord, r_cr_thr);
-
-      calc_I(r_cr_thr, I_c_thr);
-      L2_grad(r_cr_thr, I_c_thr, exp_imgs[i].inten, grad_thr, s_thr);
-      quaternion_rotation(exp_imgs[i].q_inv, grad_thr);
-
-      I_c_thr = myvector_t(n_pixels*n_pixels, 0.0);
-
-      #pragma omp critical
-      {
-        for (int j=0; j<n_atoms; j++){
-
-          grad_r[j][0] += grad_thr[j][0];
-          grad_r[j][1] += grad_thr[j][1];
-          grad_r[j][2] += grad_thr[j][2];
-        }
-
-        s_cv += s_thr;
-      }
-    }
-  }
-
-  std::cout << "...done" << std::endl;
-  results_to_json(s_cv, grad_r);
-  std::cout << "Results saved." << std::endl;
 } */
+
+void Grad_cv::gen_run(){
+
+
+  // std::cout << "Running gradient for " << n_imgs << " images..." << std::endl;
+  
+  myvector_t r_rot = r_coord;
+
+  for (int i=0; i<exp_imgs.size(); i++){
+
+    quaternion_rotation(exp_imgs[i].q, r_coord, r_rot);
+
+    calc_I(r_rot, exp_imgs[i].I);
+    gaussian_normalization(exp_imgs[i].I);
+    print_image(&exp_imgs[i]);
+  }
+
+        
+  //The convoluted image was written in Iexp because we need two images to test the cv and the gradient
+  // // std::cout << "\n Applying CTF to calcualted image ..." << std::endl;
+  // conv_proj_ctf();
+  // // std::cout << "... done" << std::endl;
+
+  // std::cout << "\n The calculated images were saved as " << image_file + "?.txt"<< std::endl;
+}
+
+void Grad_cv::parallel_run(){
+  
+  // std::cout << "Running gradient for " << n_imgs << " images..." << std::endl;
+  
+  myvector_t r_rot = r_coord;
+  myvector_t Icalc(n_pixels*n_pixels, 0.0);
+  myvector_t grad_tmp(3*n_atoms);
+  myfloat_t s_tmp;
+  s_cv = 0;
+
+
+  for (int i=0; i<n_imgs; i++){
+
+    quaternion_rotation(exp_imgs[i].q, r_coord, r_rot);
+
+    calc_I(r_rot, Icalc);
+    L2_grad(r_rot, Icalc, exp_imgs[i].I, grad_tmp, s_tmp);
+    quaternion_rotation(exp_imgs[i].q_inv, grad_tmp);
+
+    Icalc = myvector_t(n_pixels*n_pixels, 0.0);
+
+    #pragma omp parallel for simd 
+    for (int j=0; j<3*n_atoms; j++) grad_r[j] += grad_tmp[j];
+
+    s_cv += s_tmp;
+  }
+
+  // std::cout << "...done" << std::endl;
+  results_to_json(s_cv, grad_r);
+  // std::cout << "Results saved." << std::endl;
+}
 
 void Grad_cv::test_parallel_num(){
   
-  //std::cout << "Running gradient for " << n_imgs << " images..." << std::endl;
+  //// std::cout << "Running gradient for " << n_imgs << " images..." << std::endl;
   
   myvector_t r_rot = r_coord;
   myvector_t Icalc(n_pixels*n_pixels, 0.0);
@@ -717,7 +718,7 @@ void Grad_cv::test_parallel_num(){
     quaternion_rotation(exp_imgs[i].q, r_coord, r_rot);
 
     calc_I(r_rot, Icalc);
-    L2_grad(r_rot, Icalc, exp_imgs[i].inten, grad_tmp, s_tmp);
+    L2_grad(r_rot, Icalc, exp_imgs[i].I, grad_tmp, s_tmp);
     quaternion_rotation(exp_imgs[i].q_inv, grad_tmp);
 
     Icalc = myvector_t(n_pixels*n_pixels, 0.0);
@@ -740,7 +741,7 @@ void Grad_cv::test_parallel_num(){
     quaternion_rotation(exp_imgs[i].q, r_coord, r_rot);
 
     calc_I(r_rot, Icalc);
-    L2_grad(r_rot, Icalc, exp_imgs[i].inten, grad_tmp, s_tmp);
+    L2_grad(r_rot, Icalc, exp_imgs[i].I, grad_tmp, s_tmp);
     quaternion_rotation(exp_imgs[i].q_inv, grad_tmp);
 
     Icalc = myvector_t(n_pixels*n_pixels, 0.0);
@@ -754,21 +755,21 @@ void Grad_cv::test_parallel_num(){
   s2 = s_cv;
   num_grad = (s2 - s1)/dt;
 
-  std::cout.precision(10);                                                                                                                                              
-  std::cout << s1 << ", " << s2 << std::endl;                                                                                                                           
-  std::cout << std::scientific << "grad_A: " << grad_r[index] << "\n"                                                                                                   
-            << "grad_N: " << num_grad << std::endl;                                                                                                                     
+  // std::cout.precision(10);                                                                                                                                              
+  // std::cout << s1 << ", " << s2 << std::endl;                                                                                                                           
+  // std::cout << std::scientific << "grad_A: " << grad_r[index] << "\n"                                                                                                   
+            // << "grad_N: " << num_grad << std::endl;                                                                                                                     
 
 
 
-  // std::cout << "...done" << std::endl;
+  // // std::cout << "...done" << std::endl;
   // results_to_json(s_cv, grad_r);
-  // std::cout << "Results saved." << std::endl;
+  // // std::cout << "Results saved." << std::endl;
 }
 
 void Grad_cv::test_parallel_time(){
   
-  std::cout << "Running gradient for " << n_imgs << " images..." << std::endl;
+  // std::cout << "Running gradient for " << n_imgs << " images..." << std::endl;
   auto start1 = std::chrono::high_resolution_clock::now();
 
   // Gradient variables
@@ -785,7 +786,7 @@ void Grad_cv::test_parallel_time(){
       quaternion_rotation(exp_imgs[i].q, r_coord, r_rot);
 
       calc_I(r_rot, Icalc);
-      L2_grad(r_rot, Icalc, exp_imgs[i].inten, grad_tmp, s_tmp);
+      L2_grad(r_rot, Icalc, exp_imgs[i].I, grad_tmp, s_tmp);
       quaternion_rotation(exp_imgs[i].q_inv, grad_tmp);
 
       Icalc = myvector_t(n_pixels*n_pixels, 0.0);
@@ -801,12 +802,12 @@ void Grad_cv::test_parallel_time(){
   auto end1 = std::chrono::high_resolution_clock::now();
   auto duration1 = std::chrono::duration_cast<std::chrono::microseconds>(end1 - start1);
   
-  std::cout << "Parallel time: " << duration1.count()/1000 << " µs"<< std::endl;
+  // std::cout << "Parallel time: " << duration1.count()/1000 << " µs"<< std::endl;
 }
 
 void Grad_cv::test_serial_time(){
   
-  std::cout << "Running gradient for " << n_imgs << " images..." << std::endl;
+  // std::cout << "Running gradient for " << n_imgs << " images..." << std::endl;
   auto start1 = std::chrono::high_resolution_clock::now();
 
   // Gradient variables
@@ -826,7 +827,7 @@ void Grad_cv::test_serial_time(){
       quaternion_rotation(exp_imgs[i].q, r_coord, r_cr);
 
       calc_I(r_cr, I_c);
-      L2_grad(r_cr, I_c, exp_imgs[i].inten, grad_it, s_it);
+      L2_grad(r_cr, I_c, exp_imgs[i].I, grad_it, s_it);
       quaternion_rotation(exp_imgs[i].q_inv, grad_it);
 
       for (int j=0; j<3*n_atoms; j++) grad_r[j] += grad_it[j];
@@ -839,7 +840,7 @@ void Grad_cv::test_serial_time(){
   auto end1 = std::chrono::high_resolution_clock::now();
   auto duration1 = std::chrono::duration_cast<std::chrono::microseconds>(end1 - start1);
   
-  std::cout << "Serial time: " << duration1.count()/1000 << " µs"<< std::endl;
+  // std::cout << "Serial time: " << duration1.count()/1000 << " µs"<< std::endl;
 }
 // Utilities
 void Grad_cv::arange(myvector_t &out_vec, myfloat_t xo, myfloat_t xf, myfloat_t dx){
@@ -861,24 +862,24 @@ void Grad_cv::arange(myvector_t &out_vec, myfloat_t xo, myfloat_t xf, myfloat_t 
     std::generate(out_vec.begin(), out_vec.end(), [n=0, &xo, &a_x]() mutable { return n++ * a_x + xo; });   
 }
 
-void Grad_cv::print_image(myvector_t &Im, std::string fname){
+void Grad_cv::print_image(myimage_t *IMG){
 
   std::ofstream matrix_file;
-  matrix_file.open (fname);
+  matrix_file.open (IMG->fname);
 
-  std::cout.precision(3);
+  // std::cout.precision(3);
 
-  matrix_file << std::scientific << std::showpos << defocus << " \n";
+  matrix_file << std::scientific << std::showpos << IMG->defocus << " \n";
 
   for (int i=0; i<4; i++){
 
-    matrix_file << std::scientific << std::showpos << quat[i] << " \n";
+    matrix_file << std::scientific << std::showpos << IMG->q[i] << " \n";
   }
 
   for (int i=0; i<n_pixels; i++){
     for (int j=0; j<n_pixels; j++){
 
-      matrix_file << std::scientific << std::showpos << Im[i*n_pixels + j] << " " << " \n"[j==n_pixels-1];
+      matrix_file << std::scientific << std::showpos << IMG->I[i*n_pixels + j] << " " << " \n"[j==n_pixels-1];
     }
   }
 
@@ -917,7 +918,7 @@ void Grad_cv::read_exp_img(std::string fname, myimage_t *IMG){
   //Read image
   for (int i=0; i<n_pixels*n_pixels; i++){
 
-    file >> IMG->inten[i];
+    file >> IMG->I[i];
   }
   file.close();
 }
@@ -933,9 +934,9 @@ int Grad_cv::read_parameters(std::string fileinput){
   char line[512] = {0};
   char saveline[512];
 
-  std::cout << "\n +++++++++++++++++++++++++++++++++++++++++ \n";
-  std::cout << "\n   READING EM2D PARAMETERS            \n\n";
-  std::cout << " +++++++++++++++++++++++++++++++++++++++++ \n";
+  // std::cout << "\n +++++++++++++++++++++++++++++++++++++++++ \n";
+  // std::cout << "\n   READING EM2D PARAMETERS            \n\n";
+  // std::cout << " +++++++++++++++++++++++++++++++++++++++++ \n";
 
   while (input.getline(line, 512))
   {
@@ -946,22 +947,12 @@ int Grad_cv::read_parameters(std::string fileinput){
       // comment or blank line
     }
 
-    else if (strcmp(token, "N_IMGS") == 0){
-      token = strtok(NULL, " ");
-      n_imgs = atoi(token);
-
-      if (n_imgs <= 0) myError("Invalid number of images");
-      std::cout << "Number of images " << n_imgs << "\n";
-
-      yesNimgs = true;
-    }
-
     else if (strcmp(token, "PIXEL_SIZE") == 0){
       token = strtok(NULL, " ");
       pixel_size = atof(token);
       
       if (pixel_size < 0) myError("Negative pixel size");
-      std::cout << "Pixel Size " << pixel_size << "\n";
+      // std::cout << "Pixel Size " << pixel_size << "\n";
 
       yesPixSi = true;
     }
@@ -976,7 +967,7 @@ int Grad_cv::read_parameters(std::string fileinput){
         myError("Negative Number of Pixels");
       }
 
-      std::cout << "Number of Pixels " << n_pixels << "\n";
+      // std::cout << "Number of Pixels " << n_pixels << "\n";
       yesNumPix = true;
     }
     // CTF PARAMETERS
@@ -988,7 +979,7 @@ int Grad_cv::read_parameters(std::string fileinput){
       {
         myError("Negative B Env.");
       }
-      std::cout << "B Env. " << b_factor << "\n";
+      // std::cout << "B Env. " << b_factor << "\n";
       yesBFact = true;
     }
 
@@ -1000,7 +991,7 @@ int Grad_cv::read_parameters(std::string fileinput){
         myError("Negative amplitude");
       }
 
-      std::cout << "CTF Amp. " << CTF_amp << "\n";
+      // std::cout << "CTF Amp. " << CTF_amp << "\n";
       yesAMP = true;
     }
 
@@ -1014,7 +1005,7 @@ int Grad_cv::read_parameters(std::string fileinput){
       max_defocus = atof(token);
       if (max_defocus < 0) myError("Negative max defocus");
 
-      std::cout << "Defocus " << min_defocus << " " << max_defocus << "\n";
+      // std::cout << "Defocus " << min_defocus << " " << max_defocus << "\n";
       yesDefocus = true;
     }
 
@@ -1028,7 +1019,7 @@ int Grad_cv::read_parameters(std::string fileinput){
                 "Has to be in Angstrom (A)",
                 elecwavel);
       }
-      std::cout << "Electron wave length in (A) is: " << elecwavel << "\n";
+      // std::cout << "Electron wave length in (A) is: " << elecwavel << "\n";
     }
     // CV PARAMETERS
     else if (strcmp(token, "SIGMA") == 0)
@@ -1039,7 +1030,7 @@ int Grad_cv::read_parameters(std::string fileinput){
       {
         myError("Negative standard deviation for the gaussians");
       }
-      std::cout << "Sigma " << sigma_cv << "\n";
+      // std::cout << "Sigma " << sigma_cv << "\n";
       yesSigmaCV = true;
     }
     else if (strcmp(token, "SIGMA_REACH") == 0)
@@ -1050,15 +1041,12 @@ int Grad_cv::read_parameters(std::string fileinput){
       {
         myError("Negative sigma reach");
       }
-      std::cout << "Sigma Reach " << sigma_reach << "\n";
+      // std::cout << "Sigma Reach " << sigma_reach << "\n";
       yesSigmaReach = true;
     }
   }
   input.close();
 
-  if (not(yesNimgs)){
-    myError("Input missing: please provide N_IMGS");
-  }
   if (not(yesPixSi)){
     myError("Input missing: please provide PIXEL_SIZE");
   }
@@ -1078,12 +1066,12 @@ int Grad_cv::read_parameters(std::string fileinput){
     myError("Input missing: please provide SIGMA_REACH");
   }
 
-  if (not(yesDefocus) && p_type == "D"){
+  if (not(yesDefocus)){
     myError("Input missing: please provide CTF_DEFOCUS")
   }
 
   if (elecwavel == 0.019688)
-    std::cout << "Using default electron wave length: 0.019688 (A) of 300kV "
+    // std::cout << "Using default electron wave length: 0.019688 (A) of 300kV "
             "microscope\n";
 
   return 0;
@@ -1100,7 +1088,7 @@ void Grad_cv::results_to_json(myfloat_t s, myvector_t &sgrad){
   gradfile << std::setw(4) << "{" << std::endl;
 
   //save colvar
-  std::cout.precision(17);
+  // std::cout.precision(17);
   gradfile << std::setprecision(15) << std::setw(10) << "\"s\": "
            << s << "," << std::endl;
 

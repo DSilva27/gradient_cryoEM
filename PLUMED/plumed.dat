@@ -1,0 +1,33 @@
+LOAD FILE=emgrad.cpp
+MOLINFO STRUCTURE=structure0.pdb MOLTYPE=protein
+GROUP NDX_FILE=index.ndx NDX_GROUP=C-alpha LABEL=c_alphas
+
+# FIT_TO_TEMPLATE REFERENCE=apo_centered_CA.pdb TYPE=OPTIMAL
+
+# create CV
+EMGRAD ...
+    LABEL=emgrad
+    ATOMS=c_alphas
+    SIGMA=0.1 CUTOFF=100 N_PIXELS=124 PIXEL_SIZE=0.1
+    IMG_PREFIX=images/test_img_ N_IMAGES=1
+...
+
+#BIASVALUE ARG=emgrad
+
+METAD: ARG=emgrad
+
+
+
+
+
+EMGRAD ...
+    LABEL=emgrad_nd
+    ATOMS=c_alphas
+    SIGMA=0.1 CUTOFF=100 N_PIXELS=124 PIXEL_SIZE=0.1
+    IMG_PREFIX=images/test_img_ N_IMAGES=4 NUMERICAL_DERIVATIVES
+...
+
+# print the colvar and its derivatives
+PRINT ARG=emgrad FILE=COLVAR STRIDE=1 FMT=%.15f
+DUMPDERIVATIVES ARG=emgrad FILE=deriv FMT=%8.4f STRIDE=40
+DUMPDERIVATIVES ARG=emgrad,emgrad_nd FILE=deriv FMT=%8.4f STRIDE=40

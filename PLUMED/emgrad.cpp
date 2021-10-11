@@ -3,6 +3,7 @@
 #include "/Data/Packages/Research/plumed2/src/isdb/core/PlumedMain.h"
 #include "/Data/Packages/Research/plumed2/src/isdb/tools/Pbc.h"
 #include "/Data/Packages/Research/plumed2/src/isdb/tools/OpenMP.h"
+#include "/Data/Packages/Research/plumed2/src/isdb/tools/Communicator.h"
 
 #include <string>
 #include <cmath>
@@ -13,10 +14,32 @@ typedef double myfloat_t;
 typedef myfloat_t mycomplex_t[2];
 typedef std::vector <myfloat_t> myvector_t;
 typedef std::vector <myvector_t> mymatrix_t;
+typedef std::vector <PLMD::Vector> mycoord_t;
+
+typedef double myfloat_t;
+typedef myfloat_t mycomplex_t[2];
+typedef std::vector <myfloat_t> myvector_t;
+typedef std::vector <myvector_t> mymatrix_t;
+
+typedef struct image {
+  myfloat_t defocus;
+  myvector_t q = myvector_t(4, 0.0);
+  myvector_t q_inv = myvector_t(4, 0);
+  myvector_t I;
+  std::string fname;
+} myimage_t;
+
+//typedef struct image myimage_t;
+typedef std::vector<myimage_t> mydataset_t;
 
 #pragma omp declare reduction(vec_float_plus : std::vector<myfloat_t> : \
                               std::transform(omp_out.begin(), omp_out.end(), omp_in.begin(), omp_out.begin(), std::plus<myfloat_t>())) \
                               initializer(omp_priv = decltype(omp_orig)(omp_orig.size()))
+
+#pragma omp declare reduction(vec_plmd_plus : std::vector<PLMD::Vector> : \
+std::transform(omp_out.begin(), omp_out.end(), omp_in.begin(), omp_out.begin(), std::plus<PLMD::Vector>())) \
+                              initializer(omp_priv = decltype(omp_orig)(omp_orig.size()))
+
 
 namespace PLMD {
 namespace isdb {
@@ -24,38 +47,31 @@ namespace isdb {
 class EmGrad : public Colvar {
 
  private:
-  bool pbc;
+  bool pbc, serial;
   myfloat_t sigma, cutoff, pixel_size, defocus, norm;
-  int n_pixels, n_atoms, n_neigh;
+  int n_pixels, n_atoms, n_neigh, n_imgs, rank, world_size, ntomp;
 
-  myvector_t quat, quat_inv;
-
-  myvector_t x_grid, y_grid;
-  //mymatrix_t Icalc;
-  //mymatrix_t Iexp;
-  myvector_t Icalc;
-  myvector_t Iexp;
-
-  mymatrix_t Q_rot;
-
-  std::vector<Vector> pos, emgrad_der;
-  myvector_t gauss_x;
-  myvector_t gauss_y;
+  std::string img_fname;
+  mydataset_t exp_imgs;
+  
+  myvector_t grid;
+  
   myfloat_t s_cv;
 
   Tensor virial;
   
   void read_coord(myvector_t &, myvector_t &, myvector_t &, myfloat_t &);
-  void arange(myvector_t &, myfloat_t, myfloat_t, myfloat_t);
   void where(myvector_t &, std::vector<size_t> &, myfloat_t, myfloat_t);
-  void read_exp_img(std::string); 
+  void read_exp_img(myimage_t *); 
   void create_rot_matrix(myvector_t &, mymatrix_t &);
-  void quaternion_rotation(mymatrix_t &, std::vector<Vector> &);
+
+  void quaternion_rotation(myvector_t &, mycoord_t &);
+  void quaternion_rotation(myvector_t &, mycoord_t &, mycoord_t &);
 
 
-  void calc_I(std::vector<Vector> &, mymatrix_t &);
-  void L2_grad(std::vector<Vector> &, mymatrix_t &, mymatrix_t &,
-               std::vector<Vector> &, myfloat_t &);
+  void calc_I(mycoord_t &, myvector_t &);
+  void L2_grad(mycoord_t &, myvector_t &, myvector_t &,
+               mycoord_t &, myfloat_t &);
   
 
  public:
@@ -74,7 +90,8 @@ void EmGrad::registerKeywords( Keywords& keys ) {
   keys.add("compulsory","CUTOFF","Neighbor cutoff.");
   keys.add("compulsory","N_PIXELS","Number of pixels for projection.");
   keys.add("compulsory","PIXEL_SIZE","Size of each pixel.");
-  keys.add("compulsory", "IMG_FILE", "File with experimental images");
+  keys.add("compulsory", "IMG_PREFIX", "Prefix for the file with experimental images");
+  keys.add("compulsory","N_IMAGES","Number of experimental images.");
 }
 
 EmGrad::EmGrad(const ActionOptions&ao):
@@ -91,8 +108,10 @@ EmGrad::EmGrad(const ActionOptions&ao):
   parse("N_PIXELS",n_pixels);
   parse("PIXEL_SIZE",pixel_size);
 
-  std::string IMG_file;
-  parse("IMG_FILE", IMG_file);
+  parse("IMG_PREFIX", img_fname);
+  parse("N_IMAGES", n_imgs);
+
+  serial = (n_imgs == 1 ? true : false);
 
   bool nopbc=!pbc;
   parseFlag("NOPBC",nopbc);
@@ -104,46 +123,58 @@ EmGrad::EmGrad(const ActionOptions&ao):
   log.printf("\n");
   log.printf("  standard deviation for gaussians : %1f\n", sigma);
   log.printf("  neighbor list cutoff : %lf\n", cutoff);
-  log.printf("  Image file : %s\n", IMG_file.c_str());
+  log.printf("  Image file prefix : %s\n", img_fname.c_str());
+  log.printf("  Number of images : %d\n", n_imgs);
   
   if(pbc) log.printf("  using periodic boundary conditions\n");
   else    log.printf("  without periodic boundary conditions\n");
 
   // log << " Bibliography" << plumed.cite("Bonomi, Camilloni, Bioinformatics, 33, 3999 (2017)") << "\n";
 
-  
-
   addValueWithDerivatives();
   setNotPeriodic();
   requestAtoms(atoms);
 
   n_atoms = getNumberOfAtoms();
-  emgrad_der.resize(n_atoms);
-  // Icalc = mymatrix_t(n_pixels, myvector_t(n_pixels, 0));
-  // Iexp = mymatrix_t(n_pixels, myvector_t(n_pixels, 0));
-  Icalc = myvector_t(n_pixels*n_pixels, 0.0);
-  Iexp = myvector_t(n_pixels*n_pixels, 0.0);
 
-  quat = myvector_t(n_pixels, 0);
+  // MPI stuff
+  if (serial){
+    exp_imgs.resize(n_imgs);
 
-  read_exp_img(IMG_file);
+    exp_imgs[0].I = myvector_t(n_pixels*n_pixels, 0.0);
+    exp_imgs[0].fname = img_fname + std::to_string(0) + ".txt";
+    read_exp_img(&exp_imgs[0]);
+  }
+
+  else {
+
+    world_size = comm.Get_size();
+    rank = comm.Get_rank();
+
+    int imgs_per_process = n_imgs/world_size;
+    exp_imgs.resize(imgs_per_process);
+    int start_img = rank*imgs_per_process;
+    
+
+    for (int i = 0; i < exp_imgs.size(); i++) {
+
+      exp_imgs[i].I = myvector_t(n_pixels*n_pixels, 0.0);
+      exp_imgs[i].fname = img_fname + std::to_string(i+start_img) + ".txt";
+      read_exp_img(&exp_imgs[i]);
+    }
+  }
+  
   norm = 1. / (2*M_PI * sigma*sigma * n_atoms);
 
-  //Calculate minimum and maximum values for the linspace-like vectors x and y
+  // Create grid
   myfloat_t min = -pixel_size * (n_pixels - 1)*0.5;
-  myfloat_t max = pixel_size * (n_pixels - 1)*0.5 + pixel_size;
+  grid.resize(n_pixels);
 
-  //Assign memory space required to fill the vectors
-  x_grid.resize(n_pixels); y_grid.resize(n_pixels);
-
-  //Generate them
-  arange(x_grid, min, max, pixel_size);
-  arange(y_grid, min, max, pixel_size);
+  for (int i=0; i<n_pixels; i++) grid[i] = min + pixel_size*i;
 
   n_neigh = (int) std::ceil(sigma * cutoff / pixel_size);
 
-  gauss_x = myvector_t(2*n_neigh+3, 0.0);
-  gauss_y = myvector_t(2*n_neigh+3, 0.0);
+  ntomp = 2; //OpenMP::getNumThreads();
 }
 
 void EmGrad::create_rot_matrix(myvector_t &q, mymatrix_t &Q){
@@ -168,7 +199,7 @@ void EmGrad::create_rot_matrix(myvector_t &q, mymatrix_t &Q){
   Q = mymatrix_t{ q0, q1, q2 };
 }
 
-void EmGrad::quaternion_rotation(mymatrix_t &Q, std::vector<Vector> &P){
+void EmGrad::quaternion_rotation(myvector_t &q, mycoord_t &r_ref){
 
 /**
  * @brief Rotates a biomolecule using the quaternions rotation matrix
@@ -186,37 +217,81 @@ void EmGrad::quaternion_rotation(mymatrix_t &Q, std::vector<Vector> &P){
  * 
  */
 
+  //Definition of the quaternion rotation matrix 
+
+  myfloat_t q00 = 1 - 2*std::pow(q[1],2) - 2*std::pow(q[2],2);
+  myfloat_t q01 = 2*q[0]*q[1] - 2*q[2]*q[3];
+  myfloat_t q02 = 2*q[0]*q[2] + 2*q[1]*q[3];
+  myvector_t q0{ q00, q01, q02 };
+  
+  myfloat_t q10 = 2*q[0]*q[1] + 2*q[2]*q[3];
+  myfloat_t q11 = 1 - 2*std::pow(q[0],2) - 2*std::pow(q[2],2);
+  myfloat_t q12 = 2*q[1]*q[2] - 2*q[0]*q[3];
+  myvector_t q1{ q10, q11, q12 };
+
+  myfloat_t q20 = 2*q[0]*q[2] - 2*q[1]*q[3];
+  myfloat_t q21 = 2*q[1]*q[2] + 2*q[0]*q[3];
+  myfloat_t q22 = 1 - 2*std::pow(q[0],2) - 2*std::pow(q[1],2);
+  myvector_t q2{ q20, q21, q22};
+
+  mymatrix_t Q{ q0, q1, q2 };
+
   myfloat_t x_tmp, y_tmp, z_tmp;
+  for (int i=0; i<n_atoms; i++){
 
-  for (unsigned int i=0; i<n_atoms; i++){
+    x_tmp = Q[0][0]*r_ref[i][0] + Q[0][1]*r_ref[i][1] + Q[0][2]*r_ref[i][2];
+    y_tmp = Q[1][0]*r_ref[i][0] + Q[1][1]*r_ref[i][1] + Q[1][2]*r_ref[i][2];
+    z_tmp = Q[2][0]*r_ref[i][0] + Q[2][1]*r_ref[i][1] + Q[2][2]*r_ref[i][2];
 
-    x_tmp = P[i][0]*Q[0][0] + P[i][1]*Q[0][1] + P[i][2]*Q[0][2];
-    y_tmp = P[i][0]*Q[1][0] + P[i][1]*Q[1][1] + P[i][2]*Q[1][2];
-    z_tmp = P[i][0]*Q[2][0] + P[i][1]*Q[2][1] + P[i][2]*Q[2][2];
-
-    P[i][0] = x_tmp;
-    P[i][1] = y_tmp;
-    P[i][2] = z_tmp;
+    r_ref[i][0] = x_tmp;
+    r_ref[i][1] = y_tmp;
+    r_ref[i][2] = z_tmp;
   }
 }
 
-void EmGrad::arange(myvector_t &out_vec, myfloat_t xo, myfloat_t xf, myfloat_t dx){
+void EmGrad::quaternion_rotation(myvector_t &q, mycoord_t &r_ref, mycoord_t &r_rot){
 
-    /**
-     * @brief Creates a linearly spaced vector from xo to xf with dimension n
-     * 
-     * @param out_vec vector where the values will be stored myvector_t
-     * @param xo initial value (myfloat_t)
-     * @param xf final value (myfloat_t)
-     * 
-     * @return void
-     */
+/**
+ * @brief Rotates a biomolecule using the quaternions rotation matrix
+ *        according to (https://en.wikipedia.org/wiki/Rotation_matrix#Quaternion)
+ * 
+ * @param q vector that stores the parameters for the rotation myvector_t (4)
+ * @param x_data original coordinates x
+ * @param y_data original coordinates y
+ * @param z_data original coordinates z
+ * @param x_r stores the rotated values x
+ * @param y_r stores the rotated values x
+ * @param z_r stores the rotated values x
+ * 
+ * @return void
+ * 
+ */
 
-    //spacing for the values
-    myfloat_t a_x = dx;
+  //Definition of the quaternion rotation matrix 
 
-    //fills a vector with values separated by a_x starting from xo [xo, xo + a, xo + 2a, ...]
-    std::generate(out_vec.begin(), out_vec.end(), [n=0, &xo, &a_x]() mutable { return n++ * a_x + xo; });   
+  myfloat_t q00 = 1 - 2*std::pow(q[1],2) - 2*std::pow(q[2],2);
+  myfloat_t q01 = 2*q[0]*q[1] - 2*q[2]*q[3];
+  myfloat_t q02 = 2*q[0]*q[2] + 2*q[1]*q[3];
+  myvector_t q0{ q00, q01, q02 };
+  
+  myfloat_t q10 = 2*q[0]*q[1] + 2*q[2]*q[3];
+  myfloat_t q11 = 1 - 2*std::pow(q[0],2) - 2*std::pow(q[2],2);
+  myfloat_t q12 = 2*q[1]*q[2] - 2*q[0]*q[3];
+  myvector_t q1{ q10, q11, q12 };
+
+  myfloat_t q20 = 2*q[0]*q[2] - 2*q[1]*q[3];
+  myfloat_t q21 = 2*q[1]*q[2] + 2*q[0]*q[3];
+  myfloat_t q22 = 1 - 2*std::pow(q[0],2) - 2*std::pow(q[1],2);
+  myvector_t q2{ q20, q21, q22};
+
+  mymatrix_t Q{ q0, q1, q2 };
+
+  for (int i=0; i<n_atoms; i++){
+
+    r_rot[i][0] = Q[0][0]*r_ref[i][0] + Q[0][1]*r_ref[i][1] + Q[0][2]*r_ref[i][2];
+    r_rot[i][1] = Q[1][0]*r_ref[i][0] + Q[1][1]*r_ref[i][1] + Q[1][2]*r_ref[i][2];
+    r_rot[i][2] = Q[2][0]*r_ref[i][0] + Q[2][1]*r_ref[i][1] + Q[2][2]*r_ref[i][2];
+  }
 }
 
 void EmGrad::where(myvector_t &inp_vec, std::vector<size_t> &out_vec, 
@@ -249,43 +324,44 @@ void EmGrad::where(myvector_t &inp_vec, std::vector<size_t> &out_vec,
     }
 }
 
-void EmGrad::read_exp_img(std::string fname){
+void EmGrad::read_exp_img(myimage_t *IMG){
 
-  
   std::ifstream file;
-  file.open(fname);
+  file.open(IMG->fname);
 
   if (!file.good()){
-    error("The file " + fname + " does not exist");
+    error("The file " + IMG->fname + " does not exist");
   }
 
   //Read defocus
-  file >> defocus;
+  file >> IMG->defocus;
   
-  //Read quaternions
-  for (int i=0; i<4; i++) file >> quat[i];
+  // Read quaternions
+  for (int i=0; i<4; i++) file >> IMG->q[i];
 
-    //Create inverse quat
-  quat_inv = myvector_t(4, 0);
+  // Fill inverse quat
+  myfloat_t quat_abs = IMG->q[0] * IMG->q[0] + 
+                       IMG->q[1] * IMG->q[1] +
+                       IMG->q[2] * IMG->q[2] +
+                       IMG->q[3] * IMG->q[3];
 
-  float quat_abs = quat[0]*quat[0] + 
-                   quat[1]*quat[1] +
-                   quat[2]*quat[2] +
-                   quat[3]*quat[3];
+  if (quat_abs > 0.0){
 
-  quat_inv[0] = -quat[0] / quat_abs;
-  quat_inv[1] = -quat[1] / quat_abs;
-  quat_inv[2] = -quat[2] / quat_abs;
-  quat_inv[3] =  quat[3] / quat_abs;
+    IMG->q_inv[0] = -IMG->q[0] / quat_abs;
+    IMG->q_inv[1] = -IMG->q[1] / quat_abs;
+    IMG->q_inv[2] = -IMG->q[2] / quat_abs;
+    IMG->q_inv[3] =  IMG->q[3] / quat_abs;
+  }
 
   //Read image
   for (int i=0; i<n_pixels*n_pixels; i++){
 
-    file >> Iexp[i];
+    file >> IMG->I[i];
   }
+  file.close();
 }
 
-void EmGrad::calc_I(std::vector<Vector> &r_a, mymatrix_t &I_c){
+void EmGrad::calc_I(mycoord_t &r_a, myvector_t &I_c){
 
   /**
    * @brief Calculates the image from the 3D model by representing the atoms as gaussians and using a 2d Grid
@@ -304,6 +380,7 @@ void EmGrad::calc_I(std::vector<Vector> &r_a, mymatrix_t &I_c){
    * 
    */
 
+
   int m_x, m_y;
   int ind_i, ind_j;
 
@@ -311,11 +388,10 @@ void EmGrad::calc_I(std::vector<Vector> &r_a, mymatrix_t &I_c){
   myvector_t gauss_x(2*n_neigh+3, 0.0);
   myvector_t gauss_y(2*n_neigh+3, 0.0);
 
-  #pragma omp for
   for (int atom=0; atom<n_atoms; atom++){
 
-    m_x = (int) std::round(abs(r_a[atom][0] - x_grid[0])/pixel_size);
-    m_y = (int) std::round(abs(r_a[atom][1] - y_grid[0])/pixel_size);
+    m_x = (int) std::round(abs(r_a[atom][0] - grid[0])/pixel_size);
+    m_y = (int) std::round(abs(r_a[atom][1] - grid[0])/pixel_size);
 
     for (int i=0; i<=2*n_neigh+2; i++){
       
@@ -325,14 +401,14 @@ void EmGrad::calc_I(std::vector<Vector> &r_a, mymatrix_t &I_c){
       if (ind_i<0 || ind_i>=n_pixels) gauss_x[i] = 0;
       else {
 
-        myfloat_t expon_x = (x_grid[ind_i] - r_a[atom][0])/sigma;
+        myfloat_t expon_x = (grid[ind_i] - r_a[atom][0])/sigma;
         gauss_x[i] = std::exp( -0.5 * expon_x * expon_x );
       }
             
       if (ind_j<0 || ind_j>=n_pixels) gauss_y[i] = 0;
       else{
 
-        myfloat_t expon_y = (y_grid[ind_j] - r_a[atom][1])/sigma;
+        myfloat_t expon_y = (grid[ind_j] - r_a[atom][1])/sigma;
         gauss_y[i] = std::exp( -0.5 * expon_y * expon_y );
       }
     }
@@ -348,21 +424,19 @@ void EmGrad::calc_I(std::vector<Vector> &r_a, mymatrix_t &I_c){
         ind_j = m_y - n_neigh - 1 + j;
         if (ind_j<0 || ind_j>=n_pixels) continue;
 
-        I_c[ind_i][ind_j] += gauss_x[i]*gauss_y[j];
+        I_c[ind_i*n_pixels + ind_j] += gauss_x[i]*gauss_y[j];
       }
     }
   }
 
-  for (int i=0; i<n_pixels; i++){ 
-    for (int j=0; j<n_pixels; j++){ 
-        
-      I_c[i][j] *= norm;
-    }
+  for (int i=0; i<n_pixels*n_pixels; i++){ 
+  
+    I_c[i] *= norm;
   }
 }
 
-void EmGrad::L2_grad(std::vector<Vector> &r_a, mymatrix_t &I_c, mymatrix_t &I_e,
-                      std::vector<Vector> &gr_r, myfloat_t &s){
+void EmGrad::L2_grad(mycoord_t &r_a, myvector_t &I_c, myvector_t &I_e,
+                      mycoord_t &gr_r, myfloat_t &s){
 
   /**
    * @brief Calculates the image from the 3D model by representing the atoms as gaussians and using a 2d Grid
@@ -378,13 +452,14 @@ void EmGrad::L2_grad(std::vector<Vector> &r_a, mymatrix_t &I_c, mymatrix_t &I_e,
 
   int m_x, m_y;
   int ind_i, ind_j;
+  
+  myvector_t gauss_x(2*n_neigh+3, 0.0);
+  myvector_t gauss_y(2*n_neigh+3, 0.0);
 
-  // std::vector<size_t> x_sel, y_sel;
-  #pragma omp for
   for (int atom=0; atom<n_atoms; atom++){
 
-    m_x = (int) std::round(abs(r_a[atom][0] - x_grid[0])/pixel_size);
-    m_y = (int) std::round(abs(r_a[atom][1] - y_grid[0])/pixel_size);
+    m_x = (int) std::round(abs(r_a[atom][0] - grid[0])/pixel_size);
+    m_y = (int) std::round(abs(r_a[atom][1] - grid[0])/pixel_size);
 
     for (int i=0; i<=2*n_neigh+2; i++){
       
@@ -394,14 +469,14 @@ void EmGrad::L2_grad(std::vector<Vector> &r_a, mymatrix_t &I_c, mymatrix_t &I_e,
       if (ind_i<0 || ind_i>=n_pixels) gauss_x[i] = 0;
       else {
 
-        myfloat_t expon_x = (x_grid[ind_i] - r_a[atom][0])/sigma;
+        myfloat_t expon_x = (grid[ind_i] - r_a[atom][0])/sigma;
         gauss_x[i] = std::exp( -0.5 * expon_x * expon_x );
       }
             
       if (ind_j<0 || ind_j>=n_pixels) gauss_y[i] = 0;
       else{
 
-        myfloat_t expon_y = (y_grid[ind_j] - r_a[atom][1])/sigma;
+        myfloat_t expon_y = (grid[ind_j] - r_a[atom][1])/sigma;
         gauss_y[i] = std::exp( -0.5 * expon_y * expon_y );
       }
     }
@@ -419,22 +494,18 @@ void EmGrad::L2_grad(std::vector<Vector> &r_a, mymatrix_t &I_c, mymatrix_t &I_e,
         ind_j = m_y - n_neigh - 1 + j;
         if (ind_j<0 || ind_j>=n_pixels) continue;
 
-        s1 += (I_c[ind_i][ind_j] - I_e[ind_i][ind_j]) * (x_grid[ind_i] - r_a[atom][0]) * gauss_x[i] * gauss_y[j];
-        s2 += (I_c[ind_i][ind_j] - I_e[ind_i][ind_j]) * (y_grid[ind_j] - r_a[atom][1]) * gauss_x[i] * gauss_y[j];
+        s1 += (I_c[ind_i*n_pixels + ind_j] - I_e[ind_i*n_pixels + ind_j]) * (grid[ind_i] - r_a[atom][0]) * gauss_x[i] * gauss_y[j];
+        s2 += (I_c[ind_i*n_pixels + ind_j] - I_e[ind_i*n_pixels + ind_j]) * (grid[ind_j] - r_a[atom][1]) * gauss_x[i] * gauss_y[j];
       }
     }
 
     gr_r[atom][0] = s1 * 2*norm / (sigma * sigma);
     gr_r[atom][1] = s2 * 2*norm / (sigma * sigma);
+    gr_r[atom][2] = 0;
   }
   
   s = 0;
-  for (int i=0; i<n_pixels; i++){ 
-    for (int j=0; j<n_pixels; j++){ 
-      
-      s += (I_c[i][j] - I_e[i][j]) * (I_c[i][j] - I_e[i][j]);
-    }
-  }
+  for (int i=0; i<n_pixels*n_pixels; i++) s += (I_c[i] - I_e[i]) * (I_c[i] - I_e[i]);
 }
 
 
@@ -443,148 +514,59 @@ void EmGrad::calculate() {
 
   if(pbc) makeWhole();
 
-  // Reset image
-  //Icalc = mymatrix_t(n_pixels, myvector_t(n_pixels, 0));
-  Icalc = myvector_t(n_pixels*n_pixels, 0.0);
+  mycoord_t pos = getPositions();
+  mycoord_t emgrad_der(n_atoms);
 
-  pos = getPositions();
   s_cv = 0;
 
-  #pragma omp parallel num_threads(OpenMP::getNumThreads())
-  {
-    int m_x, m_y;
-    int ind_i, ind_j;
+  if (ntomp > 1 && !serial){
 
-    // std::vector<size_t> x_sel, y_sel;
-    myvector_t gauss_x(2*n_neigh+3, 0.0);
-    myvector_t gauss_y(2*n_neigh+3, 0.0);
+    #pragma omp parallel num_threads(ntomp)
+    {
+      mycoord_t grad_tmp(n_atoms);
+      mycoord_t r_rot(n_atoms);
+      myfloat_t s_tmp;
+      myvector_t Icalc(n_pixels*n_pixels, 0.0);
 
-    // mymatrix_t Icalc_thr(n_pixels, myvector_t(n_pixels, 0.0));
+      #pragma omp for reduction(vec_plmd_plus : emgrad_der) reduction(+ : s_cv)
+      for (int i=0; i<exp_imgs.size(); i++){
 
-    #pragma omp for reduction(vec_float_plus : Icalc)
-    for (int atom=0; atom<n_atoms; atom++){
+        quaternion_rotation(exp_imgs[i].q, pos, r_rot);
 
-      m_x = (int) std::round(abs(pos[atom][0] - x_grid[0])/pixel_size);
-      m_y = (int) std::round(abs(pos[atom][1] - y_grid[0])/pixel_size);
+        calc_I(r_rot, Icalc);
+        L2_grad(r_rot, Icalc, exp_imgs[i].I, grad_tmp, s_tmp);
+        quaternion_rotation(exp_imgs[i].q_inv, grad_tmp);
 
-      #pragma omp simd
-      for (int i=0; i<=2*n_neigh+2; i++){
-        
-        ind_i = m_x - n_neigh - 1 + i;
-        ind_j = m_y - n_neigh - 1 + i;
+        s_cv += s_tmp;
 
-        if (ind_i<0 || ind_i>=n_pixels) gauss_x[i] = 0;
-        else {
+        for (int j=0; j<n_atoms; j++){
 
-          myfloat_t expon_x = (x_grid[ind_i] - pos[atom][0])/sigma;
-          gauss_x[i] = std::exp( -0.5 * expon_x * expon_x );
+          emgrad_der[j] += grad_tmp[j];
         }
-              
-        if (ind_j<0 || ind_j>=n_pixels) gauss_y[i] = 0;
-        else{
 
-          myfloat_t expon_y = (y_grid[ind_j] - pos[atom][1])/sigma;
-          gauss_y[i] = std::exp( -0.5 * expon_y * expon_y );
-        }
-      }
-
-      //Calculate the image and the gradient
-      for (int i=0; i<=2*n_neigh+2; i++){
-        
-        ind_i = m_x - n_neigh - 1 + i;
-        if (ind_i<0 || ind_i>=n_pixels) continue;
-        
-        #pragma omp simd
-        for (int j=0; j<=2*n_neigh+2; j++){
-
-          ind_j = m_y - n_neigh - 1 + j;
-          if (ind_j<0 || ind_j>=n_pixels) continue;
-
-          //Icalc_thr[ind_i][ind_j] += gauss_x[i]*gauss_y[j];
-          //Icalc[ind_i][ind_j] += gauss_x[i]*gauss_y[j];
-          Icalc[ind_i*n_pixels + ind_j] += gauss_x[i]*gauss_y[j];
-        }
+        Icalc = myvector_t(n_pixels*n_pixels, 0.0);
       }
     }
-
-    #pragma omp for
-    for (int i=0; i<n_pixels; i++){ 
-      #pragma omp simd
-      for (int j=0; j<n_pixels; j++){ 
-          
-        //Icalc[i][j] += Icalc_thr[i][j]*norm;
-        //Icalc[i][j] *= norm;
-        Icalc[i*n_pixels + j] *= norm;
-      }
-    }
-    
-
-    #pragma omp for reduction(+:s_cv)
-    for (int i=0; i<n_pixels; i++){ 
-      #pragma omp simd
-      for (int j=0; j<n_pixels; j++){ 
-        
-        //s_cv += (Icalc[i][j] - Iexp[i][j]) * (Icalc[i][j] - Iexp[i][j]);
-        s_cv += (Icalc[i*n_pixels + j] - Iexp[i*n_pixels + j]) * (Icalc[i*n_pixels + j] - Iexp[i*n_pixels + j]);
-      }
-    }
-
-    #pragma omp for
-    for (int atom=0; atom<n_atoms; atom++){
-
-      m_x = (int) std::round(abs(pos[atom][0] - x_grid[0])/pixel_size);
-      m_y = (int) std::round(abs(pos[atom][1] - y_grid[0])/pixel_size);
-
-      #pragma omp simd
-      for (int i=0; i<=2*n_neigh+2; i++){
-        
-        ind_i = m_x - n_neigh - 1 + i;
-        ind_j = m_y - n_neigh - 1 + i;
-
-        if (ind_i<0 || ind_i>=n_pixels) gauss_x[i] = 0;
-        else {
-
-          myfloat_t expon_x = (x_grid[ind_i] - pos[atom][0])/sigma;
-          gauss_x[i] = std::exp( -0.5 * expon_x * expon_x );
-        }
-              
-        if (ind_j<0 || ind_j>=n_pixels) gauss_y[i] = 0;
-        else{
-
-          myfloat_t expon_y = (y_grid[ind_j] - pos[atom][1])/sigma;
-          gauss_y[i] = std::exp( -0.5 * expon_y * expon_y );
-        }
-      }
-
-      myfloat_t s1=0, s2=0;
-
-      //Calculate the image and the gradient
-      for (int i=0; i<=2*n_neigh+2; i++){
-        
-        ind_i = m_x - n_neigh - 1 + i;
-        if (ind_i<0 || ind_i>=n_pixels) continue;
-        
-        for (int j=0; j<=2*n_neigh+2; j++){
-
-          ind_j = m_y - n_neigh - 1 + j;
-          if (ind_j<0 || ind_j>=n_pixels) continue;
-
-          //s1 += (Icalc[ind_i][ind_j] - Iexp[ind_i][ind_j]) * (x_grid[ind_i] - pos[atom][0]) * gauss_x[i] * gauss_y[j];
-          //s2 += (Icalc[ind_i][ind_j] - Iexp[ind_i][ind_j]) * (y_grid[ind_j] - pos[atom][1]) * gauss_x[i] * gauss_y[j];
-          s1 += (Icalc[ind_i*n_pixels + ind_j] - Iexp[ind_i*n_pixels + ind_j]) * (x_grid[ind_i] - pos[atom][0]) * gauss_x[i] * gauss_y[j];
-          s2 += (Icalc[ind_i*n_pixels + ind_j] - Iexp[ind_i*n_pixels + ind_j]) * (y_grid[ind_j] - pos[atom][1]) * gauss_x[i] * gauss_y[j];
-        }
-      }
-
-      emgrad_der[atom][0] = s1 * 2*norm / (sigma * sigma);
-      emgrad_der[atom][1] = s2 * 2*norm / (sigma * sigma);
-    }
-    
-    #pragma omp for
-    for(unsigned int i=0; i<getNumberOfAtoms(); i++) setAtomsDerivatives(i, emgrad_der[i]);
   }
   
+  else {
 
+    myvector_t Icalc(n_pixels*n_pixels, 0.0);
+
+
+    quaternion_rotation(exp_imgs[0].q, pos);
+    calc_I(pos, Icalc);
+    L2_grad(pos, Icalc, exp_imgs[0].I, emgrad_der, s_cv);
+    quaternion_rotation(exp_imgs[0].q_inv, emgrad_der);
+  }
+
+  if (!serial){
+
+    comm.Sum(s_cv);
+    comm.Sum(&emgrad_der[0][0], 3*emgrad_der.size());
+  }
+  
+  for(unsigned i=0; i<emgrad_der.size(); ++i) setAtomsDerivatives(i, emgrad_der[i]);
   setValue(s_cv);
   // setBoxDerivatives(virial);
   setBoxDerivativesNoPbc();

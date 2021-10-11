@@ -1,5 +1,5 @@
 IDIR = include
-CC = g++
+CC = mpic++
 CFLAGS = -std=c++17 -O1 -fopenmp -g -I$(IDIR) -lm -lfftw3 
 
 SDIR = src
