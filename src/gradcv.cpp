@@ -1,10 +1,10 @@
 #include "gradcv.h"
 
-void run_emgrad(std::string coord_file, std::string img_prefix, int n_imgs, int rank, int world_size, int ntomp){
+void run_emgrad(std::string coord_file, std::string param_file, std::string img_prefix, int n_imgs, int rank, int world_size, int ntomp){
 
   // Read parameters
   myparam_t emgrad_param;
-  read_parameters("input/parameters.txt", &emgrad_param, rank);
+  read_parameters(param_file, &emgrad_param, rank);
   emgrad_param.n_imgs = n_imgs;
 
   // Read coordinates
@@ -75,13 +75,13 @@ void run_emgrad(std::string coord_file, std::string img_prefix, int n_imgs, int 
   }
 }
 
-void run_gen(std::string coord_file, std::string img_prefix, int n_imgs, int rank, int world_size, int ntomp){
+void run_gen(std::string coord_file, std::string param_file, std::string img_prefix, int n_imgs, int rank, int world_size, int ntomp){
 
   // Read parameters
   myparam_t emgrad_param;
 
   emgrad_param.mode = "gen";
-  read_parameters("input/parameters.txt", &emgrad_param, rank);
+  read_parameters(param_file, &emgrad_param, rank);
   emgrad_param.n_imgs = n_imgs;
 
   // Read coordinates
@@ -169,13 +169,13 @@ void run_gen(std::string coord_file, std::string img_prefix, int n_imgs, int ran
   if (rank == 0) printf("...done\n");
 }
 
-void run_num_test(std::string coord_file, std::string img_prefix, int n_imgs, int rank, int world_size, int ntomp){
+void run_num_test(std::string coord_file, std::string param_file, std::string img_prefix, int n_imgs, int rank, int world_size, int ntomp){
 
   // Read parameters
   myparam_t emgrad_param;
 
   emgrad_param.mode = "num_test";
-  read_parameters("input/parameters.txt", &emgrad_param, rank);
+  read_parameters(param_file, &emgrad_param, rank);
   emgrad_param.n_imgs = n_imgs;
 
   // Read coordinates
@@ -310,13 +310,13 @@ void run_num_test(std::string coord_file, std::string img_prefix, int n_imgs, in
   }
 }
 
-void run_num_test_omp(std::string coord_file, std::string img_prefix, int n_imgs, int rank, int world_size, int ntomp){
+void run_num_test_omp(std::string coord_file, std::string param_file, std::string img_prefix, int n_imgs, int rank, int world_size, int ntomp){
 
   // Read parameters
   myparam_t emgrad_param;
 
   emgrad_param.mode = "num_test";
-  read_parameters("input/parameters.txt", &emgrad_param, rank);
+  read_parameters(param_file, &emgrad_param, rank);
   emgrad_param.n_imgs = n_imgs;
 
   // Read coordinates
@@ -433,13 +433,13 @@ void run_num_test_omp(std::string coord_file, std::string img_prefix, int n_imgs
   // }
 }
 
-void run_time_test(std::string coord_file, std::string img_prefix, int n_imgs, int rank, int world_size, int ntomp){
+void run_time_test(std::string coord_file, std::string param_file, std::string img_prefix, int n_imgs, int rank, int world_size, int ntomp){
 
   // Read parameters
   myparam_t emgrad_param;
 
   emgrad_param.mode = "time_test";
-  read_parameters("input/parameters.txt", &emgrad_param, rank);
+  read_parameters(param_file, &emgrad_param, rank);
   emgrad_param.n_imgs = n_imgs;
 
   // Read coordinates
@@ -550,13 +550,13 @@ void run_time_test(std::string coord_file, std::string img_prefix, int n_imgs, i
   }
 }
 
-void run_time_test_omp(std::string coord_file, std::string img_prefix, int n_imgs, int rank, int world_size, int ntomp){
+void run_time_test_omp(std::string coord_file, std::string param_file, std::string img_prefix, int n_imgs, int rank, int world_size, int ntomp){
 
   // Read parameters
   myparam_t emgrad_param;
 
   emgrad_param.mode = "time_test";
-  read_parameters("input/parameters.txt", &emgrad_param, rank);
+  read_parameters(param_file, &emgrad_param, rank);
   emgrad_param.n_imgs = n_imgs;
 
   // Read coordinates
@@ -665,7 +665,7 @@ void run_time_test_omp(std::string coord_file, std::string img_prefix, int n_img
 }
 
 void run_grad_descent(std::string coord_file, std::string param_file, std::string img_prefix, std::string out_prefix,
-                      int n_imgs, int rank, int world_size, int ntomp, int n_steps, int stride){
+                      int n_imgs, int rank, int world_size, int ntomp, int n_steps, int stride, std::string d0){
 
   // Read parameters
   myparam_t emgrad_param;
@@ -706,19 +706,40 @@ void run_grad_descent(std::string coord_file, std::string param_file, std::strin
   myvector_t grad_hm(emgrad_param.n_atoms*3, 0.0);
 
   myvector_t grad_l2(emgrad_param.n_atoms*3, 0.0);
-  myfloat_t total_cv, acc_cv, cv, v_hm;
+  myfloat_t total_l2, acc_l2, l2, v_hm;
+  myfloat_t old_l2 = 0.0;
 
-  // if (rank==0){
+  std::ofstream outfile;
 
-  //   calc_img_omp(r_coord, Icalc, &emgrad_param, ntomp);
-  //   print_image("triang/init_img.txt", Icalc, emgrad_param.n_pixels);
-  // }
+  if (rank == 0){  
+    outfile.open (out_prefix + "colvar.txt");
+    outfile << "step    L2    HARM" << std::endl;
+  }
+
+  myfloat_t d0_flt;
+  myvector_t d0_vec;
+
+  std::string::const_iterator it = d0.begin();
+  while (it != d0.end() && std::isdigit(*it)) ++it;
+  bool d0IsNum = !d0.empty() && it == d0.end();
+
+  if (d0IsNum){
+
+    d0_flt = mystod(d0);
+  }
+
+  else {
+
+    read_ref_d(d0, d0_vec);
+  }
+
+  myfloat_t diff;
 
   for (int step=0; step<n_steps; step++){    
     
     if (emgrad_param.l2_weight != 0){
 
-      acc_cv = 0;
+      acc_l2 = 0;
       grad_l2 = myvector_t(emgrad_param.n_atoms*3, 0.0);
 
       for (int i=0; i<exp_imgs.size(); i++){
@@ -729,8 +750,8 @@ void run_grad_descent(std::string coord_file, std::string param_file, std::strin
         calc_img_omp(r_rot, Icalc, &emgrad_param, ntomp);
         
         // Gradient
-        L2_grad_omp(r_rot, Icalc, exp_imgs[i].I, grad_tmp, cv, &emgrad_param, ntomp);
-        acc_cv += cv;
+        L2_grad_omp(r_rot, Icalc, exp_imgs[i].I, grad_tmp, l2, &emgrad_param, ntomp);
+        acc_l2 += l2;
         
         quaternion_rotation(exp_imgs[i].q_inv, grad_tmp);
 
@@ -739,27 +760,57 @@ void run_grad_descent(std::string coord_file, std::string param_file, std::strin
         Icalc = myvector_t(emgrad_param.n_pixels*emgrad_param.n_pixels, 0.0);
       }
 
-      MPI_Reduce(&acc_cv, &total_cv, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+      MPI_Reduce(&acc_l2, &total_l2, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
       MPI_Allreduce(MPI_IN_PLACE, &grad_l2[0], emgrad_param.n_atoms*3, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
       MPI_Barrier(MPI_COMM_WORLD);
     }
 
     if (emgrad_param.hm_weight != 0){
       
-      harm_pot(r_coord, emgrad_param.hm_weight, 1.0, v_hm, grad_hm, ntomp);
+      if (d0IsNum){
+
+        harm_pot(r_coord, emgrad_param.hm_weight, d0_flt, v_hm, grad_hm, ntomp);
+      }
+
+      else {
+        
+        harm_pot(r_coord, emgrad_param.hm_weight, d0_vec, v_hm, grad_hm, ntomp);
+      }
     }
 
-    if (step%stride==0 && rank==0) printf("CV at step %d: %f\n", step, total_cv);
+    if (step%stride==0 && rank==0){
+
+      outfile << step << "    " << total_l2 << "    " << v_hm << std::endl;
+      std::cout << step << "    " << total_l2 << "    " << v_hm << std::endl;
+    } 
 
     for (size_t j=0; j<grad_l2.size(); j++){
       
-      r_coord[j] = r_coord[j] + emgrad_param.learn_rate * (- emgrad_param.l2_weight * grad_l2[j] 
-                                                           + emgrad_param.l2_weight * grad_hm[j]);
+      r_coord[j] = r_coord[j] - emgrad_param.learn_rate * (emgrad_param.l2_weight * grad_l2[j] +\
+                                                           emgrad_param.l2_weight * grad_hm[j]);
     } 
+
+    diff = abs(total_l2 - old_l2);
+    MPI_Bcast(&diff, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+    if (diff <= emgrad_param.tol) {
+
+      if (rank == 0){
+        outfile << step << "    " << total_l2 << "    " << v_hm << std::endl; 
+        std::cout << "Stopping simulation at step: " << step << std::endl;
+      }
+
+      
+      break;
+      //printf("Hi I am rank %d and I stopped\n", rank);
+    }
+
+    old_l2 = total_l2;
   }
 
   if (rank==0){
-
+    
+    outfile.close();
     //calc_img_omp(r_coord, Icalc, &emgrad_param, ntomp);
     //print_image(out_prefix + , Icalc, emgrad_param.n_pixels);
     print_coords(out_prefix + "coords.txt", r_coord, emgrad_param.n_atoms);
@@ -1068,9 +1119,9 @@ void harm_pot(myvector_t &r_a, myfloat_t k, myfloat_t d0, myfloat_t &vhm, myvect
 
         d_p = std::sqrt(d_p);
 
-        grad[i] = k*(1 - d0/d_p) * (r_a[i+1] - r_a[i]);
-        grad[i+n_atoms] = k*(1 - d0/d_p) * (r_a[i+1+n_atoms] - r_a[i+n_atoms]);
-        grad[i+2*n_atoms] = k*(1 - d0/d_p) * (r_a[i+1+2*n_atoms] - r_a[i+2*n_atoms]);
+        grad[i] = k*(d0/d_p - 1) * (r_a[i+1] - r_a[i]);
+        grad[i+n_atoms] = k*(d0/d_p - 1) * (r_a[i+1+n_atoms] - r_a[i+n_atoms]);
+        grad[i+2*n_atoms] = k*(d0/d_p - 1) * (r_a[i+1+2*n_atoms] - r_a[i+2*n_atoms]);
 
         vhm += 0.5 * k * (d_p - d0)*(d_p - d0);
       }
@@ -1083,9 +1134,9 @@ void harm_pot(myvector_t &r_a, myfloat_t k, myfloat_t d0, myfloat_t &vhm, myvect
 
         d_m = std::sqrt(d_m);
 
-        grad[i] = k*(1 - d0/d_m) * (r_a[i] - r_a[i-1]);
-        grad[i+n_atoms] = k*(1 - d0/d_m) * (r_a[i+n_atoms] - r_a[i-1+n_atoms]);
-        grad[i+2*n_atoms] = k*(1 - d0/d_m) * (r_a[i+2*n_atoms] - r_a[i-1+2*n_atoms]);
+        grad[i] = k*(d0/d_m - 1) * (r_a[i] - r_a[i-1]);
+        grad[i+n_atoms] = k*(d0/d_m - 1) * (r_a[i+n_atoms] - r_a[i-1+n_atoms]);
+        grad[i+2*n_atoms] = k*(d0/d_m - 1) * (r_a[i+2*n_atoms] - r_a[i-1+2*n_atoms]);
       }
 
       else {
@@ -1102,16 +1153,86 @@ void harm_pot(myvector_t &r_a, myfloat_t k, myfloat_t d0, myfloat_t &vhm, myvect
 
         d_m = std::sqrt(d_m);
 
-        grad[i] = k*((1 - d0/d_p) * (r_a[i+1] - r_a[i]) - \
-                    (1 - d0/d_m) * (r_a[i] - r_a[i-1]));
+        grad[i] = k*((d0/d_p - 1) * (r_a[i+1] - r_a[i]) - \
+                    (d0/d_m - 1) * (r_a[i] - r_a[i-1]));
 
-        grad[i+n_atoms] = k*((1 - d0/d_p) * (r_a[i+1+n_atoms] - r_a[i+n_atoms]) - \
-                            (1 - d0/d_m) * (r_a[i+n_atoms] - r_a[i-1+n_atoms]));
+        grad[i+n_atoms] = k*((d0/d_p - 1) * (r_a[i+1+n_atoms] - r_a[i+n_atoms]) - \
+                            (d0/d_m - 1) * (r_a[i+n_atoms] - r_a[i-1+n_atoms]));
 
-        grad[i+2*n_atoms] = k*((1 - d0/d_p) * (r_a[i+1+2*n_atoms] - r_a[i+2*n_atoms]) - \
-                              (1 - d0/d_m) * (r_a[i+2*n_atoms] - r_a[i-1+2*n_atoms]));
+        grad[i+2*n_atoms] = k*((d0/d_p - 1) * (r_a[i+1+2*n_atoms] - r_a[i+2*n_atoms]) - \
+                              (d0/d_m - 1) * (r_a[i+2*n_atoms] - r_a[i-1+2*n_atoms]));
       
         vhm += 0.5 * k * (d_p - d0)*(d_p - d0);
+      }
+
+    }
+  }
+}
+
+void harm_pot(myvector_t &r_a, myfloat_t k, myvector_t &d0, myfloat_t &vhm, myvector_t &grad, int ntomp){
+    
+  size_t n_atoms = r_a.size()/3.0;
+
+  vhm = 0.0;
+  #pragma omp parallel num_threads(ntomp)
+  {
+    myfloat_t d_p, d_m;
+    
+    #pragma omp for reduction(+ : vhm)
+    for (size_t i=0; i<n_atoms; i++){
+
+      if (i == 0){
+
+        d_p = (r_a[i] - r_a[i+1])*(r_a[i] - r_a[i+1]) + \
+              (r_a[i+n_atoms] - r_a[i+1+n_atoms])*(r_a[i+n_atoms] - r_a[i+1+n_atoms]) + \
+              (r_a[i+2*n_atoms] - r_a[i+1+2*n_atoms])*(r_a[i+2*n_atoms] - r_a[i+1+2*n_atoms]);
+
+        d_p = std::sqrt(d_p);
+
+        grad[i] = k*(d0[i]/d_p - 1) * (r_a[i+1] - r_a[i]);
+        grad[i+n_atoms] = k*(d0[i]/d_p - 1) * (r_a[i+1+n_atoms] - r_a[i+n_atoms]);
+        grad[i+2*n_atoms] = k*(d0[i]/d_p - 1) * (r_a[i+1+2*n_atoms] - r_a[i+2*n_atoms]);
+
+        vhm += 0.5 * k * (d_p - d0[i])*(d_p - d0[i]);
+      }
+
+      else if (i == n_atoms-1){
+
+        d_m = (r_a[i] - r_a[i-1])*(r_a[i] - r_a[i-1]) + \
+              (r_a[i+n_atoms] - r_a[i-1+n_atoms])*(r_a[i+n_atoms] - r_a[i-1+n_atoms]) + \
+              (r_a[i+2*n_atoms] - r_a[i-1+2*n_atoms])*(r_a[i+2*n_atoms] - r_a[i-1+2*n_atoms]);
+
+        d_m = std::sqrt(d_m);
+
+        grad[i] = k*(d0[i]/d_m - 1) * (r_a[i] - r_a[i-1]);
+        grad[i+n_atoms] = k*(d0[i]/d_m - 1) * (r_a[i+n_atoms] - r_a[i-1+n_atoms]);
+        grad[i+2*n_atoms] = k*(d0[i]/d_m - 1) * (r_a[i+2*n_atoms] - r_a[i-1+2*n_atoms]);
+      }
+
+      else {
+
+        d_p = (r_a[i] - r_a[i+1])*(r_a[i] - r_a[i+1]) + \
+              (r_a[i+n_atoms] - r_a[i+1+n_atoms])*(r_a[i+n_atoms] - r_a[i+1+n_atoms]) + \
+              (r_a[i+2*n_atoms] - r_a[i+1+2*n_atoms])*(r_a[i+2*n_atoms] - r_a[i+1+2*n_atoms]);
+
+        d_p = std::sqrt(d_p);
+
+        d_m = (r_a[i] - r_a[i-1])*(r_a[i] - r_a[i-1]) + \
+              (r_a[i+n_atoms] - r_a[i-1+n_atoms])*(r_a[i+n_atoms] - r_a[i-1+n_atoms]) + \
+              (r_a[i+2*n_atoms] - r_a[i-1+2*n_atoms])*(r_a[i+2*n_atoms] - r_a[i-1+2*n_atoms]);
+
+        d_m = std::sqrt(d_m);
+
+        grad[i] = k*((d0[i]/d_p - 1) * (r_a[i+1] - r_a[i]) - \
+                    (d0[i]/d_m - 1) * (r_a[i] - r_a[i-1]));
+
+        grad[i+n_atoms] = k*((d0[i]/d_p - 1) * (r_a[i+1+n_atoms] - r_a[i+n_atoms]) - \
+                            (d0[i]/d_m - 1) * (r_a[i+n_atoms] - r_a[i-1+n_atoms]));
+
+        grad[i+2*n_atoms] = k*((d0[i]/d_p - 1) * (r_a[i+1+2*n_atoms] - r_a[i+2*n_atoms]) - \
+                              (d0[i]/d_m - 1) * (r_a[i+2*n_atoms] - r_a[i-1+2*n_atoms]));
+      
+        vhm += 0.5 * k * (d_p - d0[i])*(d_p - d0[i]);
       }
 
     }
@@ -1338,7 +1459,7 @@ void read_parameters(std::string fname, myparam_t *PARAM, int rank){
 
   bool yesPixSi = false, yesNumPix = false; 
   bool yesSigma = false, yesCutoff = false;
-  bool yesLearnRate = false, yesL2Weight = false, yesHmWeight = false;
+  bool yesLearnRate = false, yesL2Weight = false, yesHmWeight = false, yesTol = false;
 
   while (input.getline(line, 512)){
 
@@ -1426,6 +1547,15 @@ void read_parameters(std::string fname, myparam_t *PARAM, int rank){
       yesHmWeight = true;
     }
 
+    else if (strcmp(token, "TOLERANCE") == 0){
+
+      token = strtok(NULL, " ");
+      PARAM->tol = atof(token);
+
+      if (rank == 0) std::cout << "TOLERANCE " << PARAM->tol << "\n";
+      yesTol = true;
+    }
+
     // else {
     //   myError("Unknown parameter %s", token);
     // }       
@@ -1457,6 +1587,10 @@ void read_parameters(std::string fname, myparam_t *PARAM, int rank){
 
     if (not(yesHmWeight)){
       myError("Input for gradient descent missing: please provide HM_WEIGHT")
+    }
+
+    if (not(yesTol)){
+      myError("Input for gradient descent missing: please provide TOLERANCE")
     }
 
   }
@@ -1495,7 +1629,23 @@ void read_coord(std::string fname, myvector_t &r_coord, int rank){
     std::cout << "Number of atoms: " << N << std::endl;
 }
 
+void read_ref_d(std::string d0, myvector_t &d0_vec){
 
+    std::ifstream infile;
+    infile.open(d0);
+
+    if (!infile.good()) myError("Opening file: %s", d0.c_str());
+
+    size_t N; //to store the number of atoms
+    infile >> N;
+    d0_vec = myvector_t(N, 0.0);
+
+    for (size_t i=0; i<N; i++){
+
+        infile >> d0_vec[i];
+    }
+    infile.close();
+}
 
 void print_image(myimage_t *IMG, int n_pixels){
 

@@ -1,0 +1,8 @@
+ala_final_*
+ala_img_*
+ala_initial_coords.txt
+parameters.txt
+initial_ala.pdb
+final_ala.pdb
+*.out
+ref_ala*

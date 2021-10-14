@@ -202,7 +202,7 @@ def load_dataset(n_imgs, prefix):
 
 def write_param_file(fname, *args, print_p=True):
 
-    n_pixels, pixel_size, sigma, cutoff, learn_rate, l2_weight, hm_weight = args
+    n_pixels, pixel_size, sigma, cutoff, learn_rate, l2_weight, hm_weight, tolerance = args
 
     #LOAD PARAMETERS INTO FILE
     params_file = open(fname,"w")
@@ -215,6 +215,7 @@ def write_param_file(fname, *args, print_p=True):
         f"LEARN_RATE {learn_rate}\n"
         f"L2_WEIGHT {l2_weight}\n"
         f"HM_WEIGHT {hm_weight}\n"
+        f"TOLERANCE {tolerance}\n"
     )
     
     params_file.write(string)
@@ -330,7 +331,7 @@ L2_WEIGHT = 1.0; HM_WEIGHT = 0.0 # Weights for the forces
 
 # Create parameters file
 PARAM_FNAME = "parameters.txt"
-write_param_file(PARAM_FNAME, N_PIXELS, PIXEL_SIZE, SIGMA, CUTOFF, LEARN_RATE, L2_WEIGHT, HM_WEIGHT)
+write_param_file(PARAM_FNAME, N_PIXELS, PIXEL_SIZE, SIGMA, CUTOFF, LEARN_RATE, L2_WEIGHT, HM_WEIGHT, TOL)
 
 # Create extra parameters for the descent
 MPI_RANKS = 3

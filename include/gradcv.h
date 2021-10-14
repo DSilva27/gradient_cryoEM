@@ -23,6 +23,8 @@ typedef myfloat_t mycomplex_t[2];
 typedef std::vector<myfloat_t> myvector_t;
 typedef std::vector<myvector_t> mymatrix_t;
 
+#define mystod std::stod
+
 typedef struct image{
 
     myfloat_t defocus = 0;
@@ -38,7 +40,7 @@ typedef struct param_device{
   std::string mode;
   int n_pixels, n_neigh, n_imgs, n_atoms;
   myfloat_t pixel_size, sigma, cutoff, norm;
-  myfloat_t learn_rate, l2_weight, hm_weight;
+  myfloat_t learn_rate, l2_weight, hm_weight, tol;
   
   myvector_t grid;    
 
@@ -78,8 +80,9 @@ typedef std::vector<myimage_t> mydataset_t;
 
 void parse_args(int, char**, int, int, std::string &, std::string &, 
                 std::string &, std::string &, std::string &, int &, 
-                int &, int &, int &);
+                int &, int &, int &, std::string &);
 void read_coord(std::string, myvector_t &, int);
+void read_ref_d(std::string, myvector_t &);
 void read_parameters(std::string, myparam_t *, int);
 void load_dataset(std::string, int, int, mydataset_t &, int, int);
 void read_exp_img(std::string, myimage_t *);
@@ -98,16 +101,17 @@ void calc_img_omp(myvector_t &, myvector_t &, myparam_t *, int);
 void L2_grad(myvector_t &, myvector_t &, myvector_t &, myvector_t &, myfloat_t &, myparam_t *);
 void L2_grad_omp(myvector_t &, myvector_t &, myvector_t &, myvector_t &, myfloat_t &, myparam_t *, int);
 void harm_pot(myvector_t &, myfloat_t, myfloat_t, myfloat_t &, myvector_t &, int);
+void harm_pot(myvector_t &, myfloat_t, myvector_t &, myfloat_t &, myvector_t &, int);
 
-void run_emgrad(std::string, std::string, int, int, int, int);
-void run_gen(std::string, std::string, int, int, int, int);
-void run_grad_descent(std::string, std::string, std::string, std::string, int, int, int, int, int, int);
+void run_emgrad(std::string, std::string, std::string, int, int, int, int);
+void run_gen(std::string, std::string, std::string, int, int, int, int);
+void run_grad_descent(std::string, std::string, std::string, std::string, int, int, int, int, int, int, std::string);
 
 // Tests
-void run_num_test(std::string, std::string, int, int, int, int);
-void run_num_test_omp(std::string, std::string, int, int, int, int);
+void run_num_test(std::string, std::string, std::string, int, int, int, int);
+void run_num_test_omp(std::string, std::string, std::string, int, int, int, int);
 
-void run_time_test(std::string, std::string, int, int, int, int);
-void run_time_test_omp(std::string, std::string, int, int, int, int);
+void run_time_test(std::string, std::string, std::string, int, int, int, int);
+void run_time_test_omp(std::string, std::string, std::string, int, int, int, int);
 
 #endif

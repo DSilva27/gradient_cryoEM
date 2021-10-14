@@ -21,22 +21,22 @@ int main(int argc, char *argv[]){
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
   std::string mode;
-  std::string coord_file, img_prefix, param_file, out_prefix;
+  std::string coord_file, img_prefix, param_file, out_prefix, d0;
   int ntomp, n_imgs, gd_steps, gd_stride;
 
   parse_args(argc, argv, rank, world_size, mode, coord_file, param_file,
-            img_prefix, out_prefix, ntomp, n_imgs, gd_steps, gd_stride);
+            img_prefix, out_prefix, ntomp, n_imgs, gd_steps, gd_stride, d0);
 
   omp_set_num_threads(ntomp);
 
   if (mode == "grad"){
 
-    run_emgrad(coord_file, img_prefix, n_imgs, rank, world_size, ntomp);
+    run_emgrad(coord_file, param_file, img_prefix, n_imgs, rank, world_size, ntomp);
   }
   
   else if (mode == "gen"){
 
-    run_gen(coord_file, img_prefix, n_imgs, rank, world_size, ntomp);
+    run_gen(coord_file, param_file, img_prefix, n_imgs, rank, world_size, ntomp);
   }
 
   else if (mode == "num_test"){
@@ -52,7 +52,7 @@ int main(int argc, char *argv[]){
 
     //run_num_test(coord_file, img_prefix, n_imgs, rank, world_size, ntomp);
     //MPI_Barrier(MPI_COMM_WORLD);
-    run_num_test_omp(coord_file, img_prefix, n_imgs, rank, world_size, ntomp);
+    run_num_test_omp(coord_file, param_file, img_prefix, n_imgs, rank, world_size, ntomp);
   }
 
   else if (mode == "time_test"){
@@ -66,14 +66,14 @@ int main(int argc, char *argv[]){
       outfile.close();  
     }
 
-    run_time_test(coord_file, img_prefix, n_imgs, rank, world_size, ntomp);
-    run_time_test_omp(coord_file, img_prefix, n_imgs, rank, world_size, ntomp);
+    run_time_test(coord_file, param_file, img_prefix, n_imgs, rank, world_size, ntomp);
+    run_time_test_omp(coord_file, param_file, img_prefix, n_imgs, rank, world_size, ntomp);
   }
 
   else if (mode == "grad_descent"){
 
     run_grad_descent(coord_file, param_file, img_prefix, out_prefix, n_imgs, 
-                     rank, world_size, ntomp, gd_steps, gd_stride);
+                     rank, world_size, ntomp, gd_steps, gd_stride, d0);
   }
   // Finalize the MPI environment.
   MPI_Finalize();
@@ -83,7 +83,7 @@ int main(int argc, char *argv[]){
 
 void parse_args(int argc, char* argv[], int rank, int world_size, std::string &type,
                 std::string &coord_file, std::string &param_file, std::string &img_prefix, 
-                std::string &out_prefix, int &ntomp, int &n_imgs, int &nsteps, int &stride){
+                std::string &out_prefix, int &ntomp, int &n_imgs, int &nsteps, int &stride, std::string &d0){
 
   bool yesMode = false;
   bool yesCoord = false;
@@ -94,6 +94,7 @@ void parse_args(int argc, char* argv[], int rank, int world_size, std::string &t
   bool yesGdSteps = false;
   bool yesGdStride = false;
   bool yesOutPfx = false;
+  bool yesD0 = false;
 
   for (int i = 1; i < argc; i++){
 
@@ -180,8 +181,15 @@ void parse_args(int argc, char* argv[], int rank, int world_size, std::string &t
       i++; continue;
     }
 
+    else if (strcmp(argv[i], "-d0") == 0){
+      
+      d0 = argv[i+1];
+      yesD0 = true;
+      i++; continue;
+    }
+
     else{
-      myError("Unknown argumen %s", argv[i]);
+      myError("Unknown argument %s", argv[i]);
     }
   }
 
@@ -197,8 +205,9 @@ void parse_args(int argc, char* argv[], int rank, int world_size, std::string &t
     if (type == "grad_descent"){
       
       if (!yesGdSteps) myError("You should specify the number of steps for gradient descent simulation");
-      if (!yesGdStride) stride = -1;
-      if (!yesOutPfx) myError("You should provice the prefix for the outputs of your simulation!");
+      if (!yesGdStride) stride = 1;
+      if (!yesOutPfx) myError("You should provide the prefix for the outputs of your simulation!");
+      if (!yesD0) myError("You should provide the reference distances for the harmonic potential");
     }
 
     else {
