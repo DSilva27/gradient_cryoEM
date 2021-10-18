@@ -356,70 +356,65 @@ void run_num_test_omp(std::string coord_file, std::string param_file, std::strin
 
   acc_cv = 0.0;
 
-  harm_pot(r_coord, 1.0, 1.0, total_cv1, grad_tmp, ntomp);
+  for (int i=0; i<exp_imgs.size(); i++){
 
-  // for (int i=0; i<exp_imgs.size(); i++){
+    quaternion_rotation(exp_imgs[i].q, r_coord, r_rot);
 
-  //   quaternion_rotation(exp_imgs[i].q, r_coord, r_rot);
+    // Calculate Image
+    calc_img_omp(r_rot, Icalc, &emgrad_param, ntomp);
 
-  //   // Calculate Image
-  //   calc_img_omp(r_rot, Icalc, &emgrad_param, ntomp);
+    // Gradient
+    L2_grad_omp_N(r_rot, Icalc, exp_imgs[i].I, grad_tmp, cv, &emgrad_param, ntomp);
+    acc_cv += cv;
 
-  //   cv = 0.0;
-  //   for (size_t j=0; j<Icalc.size(); j++) cv += (Icalc[j] - exp_imgs[i].I[j])*(Icalc[j] - exp_imgs[i].I[j]);
+    Icalc = myvector_t(emgrad_param.n_pixels*emgrad_param.n_pixels, 0.0);
+  }
 
-  //   // Gradient
-  //   //L2_grad(r_rot, Icalc, exp_imgs[i].I, grad_tmp, cv, &emgrad_param);
-  //   acc_cv += cv;
-
-  //   Icalc = myvector_t(emgrad_param.n_pixels*emgrad_param.n_pixels, 0.0);
-  // }
-
-  // MPI_Reduce(&acc_cv, &total_cv1, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+  MPI_Reduce(&acc_cv, &total_cv1, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
   // ******************************************* END OF FIRST STEP *************************************
 
   
-  myfloat_t dt = 0.0001;
-  int index = emgrad_param.n_atoms*2 + 23;
+  myfloat_t dt = 0.001;
+  int index = 0;
 
   r_coord[index] += dt;
   acc_cv = 0.0;
   myvector_t grad_acc(emgrad_param.n_atoms*3, 0.0);
 
-  harm_pot(r_coord, 1.0, 1.0, total_cv2, grad_acc, ntomp);
+  for (int i=0; i<exp_imgs.size(); i++){
 
-  // for (int i=0; i<exp_imgs.size(); i++){
+    quaternion_rotation(exp_imgs[i].q, r_coord, r_rot);
 
-  //   quaternion_rotation(exp_imgs[i].q, r_coord, r_rot);
+    // Calculate Image
+    calc_img_omp(r_rot, Icalc, &emgrad_param, ntomp);
 
-  //   // Calculate Image
-  //   calc_img_omp(r_rot, Icalc, &emgrad_param, ntomp);
-
-  //   // Gradient
-  //   L2_grad_omp(r_rot, Icalc, exp_imgs[i].I, grad_tmp, cv, &emgrad_param, ntomp);
-  //   acc_cv += cv;
+    // Gradient
+    L2_grad_omp_N(r_rot, Icalc, exp_imgs[i].I, grad_tmp, cv, &emgrad_param, ntomp);
+    acc_cv += cv;
     
-  //   quaternion_rotation(exp_imgs[i].q_inv, grad_tmp);
+    quaternion_rotation(exp_imgs[i].q_inv, grad_tmp);
 
-  //   for (int j=0; j<emgrad_param.n_atoms*3; j++){
-  //     grad_acc[j] += grad_tmp[j];
-  //   }
+    for (int j=0; j<emgrad_param.n_atoms*3; j++){
+      grad_acc[j] += grad_tmp[j];
+    }
 
-  //   Icalc = myvector_t(emgrad_param.n_pixels*emgrad_param.n_pixels, 0.0);
-  // }
+    Icalc = myvector_t(emgrad_param.n_pixels*emgrad_param.n_pixels, 0.0);
+  }
 
-  // MPI_Reduce(&acc_cv, &total_cv2, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-  // MPI_Allreduce(MPI_IN_PLACE, &grad_acc[0], emgrad_param.n_atoms*3, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Reduce(&acc_cv, &total_cv2, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &grad_acc[0], emgrad_param.n_atoms*3, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
   myfloat_t num_grad = (total_cv2 - total_cv1)/dt;
 
   if (rank == 0){
 
+    myfloat_t rel_err = std::abs(grad_acc[index] - num_grad)/std::abs(num_grad);
     printf("%s\n",std::string(35,'*').c_str());
     printf("CV1: %f, CV2: %f\n", total_cv1, total_cv2);
     printf("*  Analytical gradient: %f  *\n", grad_acc[index]);
     printf("*  Numerical gradient: %f   *\n", num_grad);
+    printf("*  Relative error: %f       *\n", rel_err);
     printf("%s\n",std::string(35,'*').c_str());
   }
 
@@ -750,7 +745,7 @@ void run_grad_descent(std::string coord_file, std::string param_file, std::strin
         calc_img_omp(r_rot, Icalc, &emgrad_param, ntomp);
         
         // Gradient
-        L2_grad_omp(r_rot, Icalc, exp_imgs[i].I, grad_tmp, l2, &emgrad_param, ntomp);
+        L2_grad_omp_N(r_rot, Icalc, exp_imgs[i].I, grad_tmp, l2, &emgrad_param, ntomp);
         acc_l2 += l2;
         
         quaternion_rotation(exp_imgs[i].q_inv, grad_tmp);
@@ -1008,6 +1003,104 @@ void L2_grad(myvector_t &r_a, myvector_t &I_c, myvector_t &I_e,
   for (int i=0; i<I_c.size(); i++){ 
     
     cv += (I_c[i] - I_e[i])*(I_c[i] - I_e[i]);
+  }
+}
+
+void L2_grad_omp_N(myvector_t &r_a, myvector_t &I_c, myvector_t &I_e,
+            myvector_t &gr_r, myfloat_t &cv, myparam_t *PARAM, int ntomp){
+
+  /**
+   * @brief Calculates the image from the 3D model by representing the atoms as gaussians and using a 2d Grid
+   * 
+   * @param x_a original coordinates x 
+    * @param I_c Matrix used to store the calculated image
+   * @param gr_x vectors for the gradient in x
+   * @param gr_y vectors for the gradient in y
+   * 
+   * @return void
+   * 
+   */
+
+  cv = 0;
+
+  myfloat_t Ccc = 0.0, Coc = 0.0;
+
+  for (size_t i=0; i<I_c.size(); i++){
+
+    Ccc += I_c[i] * I_c[i];
+    Coc += I_e[i] * I_c[i];
+  }
+
+  myfloat_t N = Coc/Ccc;
+  myfloat_t norm = 2*N * PARAM->norm / (PARAM->sigma * PARAM->sigma);
+
+  #pragma omp parallel num_threads(ntomp)
+  {
+
+    int m_x, m_y;
+    int ind_i, ind_j;
+
+    // std::vector<size_t> x_sel, y_sel;
+    myvector_t gauss_x(2*PARAM->n_neigh+3, 0.0);
+    myvector_t gauss_y(2*PARAM->n_neigh+3, 0.0);
+
+    #pragma omp for
+    for (int atom=0; atom<PARAM->n_atoms; atom++){
+
+      m_x = (int) std::round(abs(r_a[atom] - PARAM->grid[0])/PARAM->pixel_size);
+      m_y = (int) std::round(abs(r_a[atom + PARAM->n_atoms] - PARAM->grid[0])/PARAM->pixel_size);
+
+      for (int i=0; i<=2*PARAM->n_neigh+2; i++){
+        
+        ind_i = m_x - PARAM->n_neigh - 1 + i;
+        ind_j = m_y - PARAM->n_neigh - 1 + i;
+
+        if (ind_i<0 || ind_i>=PARAM->n_pixels) gauss_x[i] = 0;
+        else {
+
+          myfloat_t expon_x = (PARAM->grid[ind_i] - r_a[atom])/PARAM->sigma;
+          gauss_x[i] = std::exp( -0.5 * expon_x * expon_x );
+        }
+              
+        if (ind_j<0 || ind_j>=PARAM->n_pixels) gauss_y[i] = 0;
+        else{
+
+          myfloat_t expon_y = (PARAM->grid[ind_j] - r_a[atom + PARAM->n_atoms])/PARAM->sigma;
+          gauss_y[i] = std::exp( -0.5 * expon_y * expon_y );
+        }
+      }
+
+      myfloat_t s1=0, s2=0, s3=0, s4=0;
+
+      //Calculate the image and the gradient
+      for (int i=0; i<=2*PARAM->n_neigh+2; i++){
+        
+        ind_i = m_x - PARAM->n_neigh - 1 + i;
+        if (ind_i<0 || ind_i>=PARAM->n_pixels) continue;
+        
+        for (int j=0; j<=2*PARAM->n_neigh+2; j++){
+
+          ind_j = m_y - PARAM->n_neigh - 1 + j;
+          if (ind_j<0 || ind_j>=PARAM->n_pixels) continue;
+
+          s1 += (N*I_c[ind_i*PARAM->n_pixels + ind_j] - I_e[ind_i*PARAM->n_pixels + ind_j]) 
+                * (PARAM->grid[ind_i] - r_a[atom]) * gauss_x[i] * gauss_y[j];
+
+          s2 += (N*I_c[ind_i*PARAM->n_pixels + ind_j] - I_e[ind_i*PARAM->n_pixels + ind_j]) 
+                * (PARAM->grid[ind_j] - r_a[atom + PARAM->n_atoms]) * gauss_x[i] * gauss_y[j];
+        }
+      }
+
+      gr_r[atom] = s1 * norm;
+      gr_r[atom + PARAM->n_atoms] = s2 * norm;
+      gr_r[atom + 2*PARAM->n_atoms] = 0;
+    }
+
+    #pragma omp for reduction(+ : cv)
+    for (int i=0; i<I_c.size(); i++){ 
+      
+      cv += (N*I_c[i] - I_e[i])*(N*I_c[i] - I_e[i]);
+    }
   }
 }
 

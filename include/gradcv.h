@@ -100,6 +100,7 @@ void calc_img_omp(myvector_t &, myvector_t &, myparam_t *, int);
 
 void L2_grad(myvector_t &, myvector_t &, myvector_t &, myvector_t &, myfloat_t &, myparam_t *);
 void L2_grad_omp(myvector_t &, myvector_t &, myvector_t &, myvector_t &, myfloat_t &, myparam_t *, int);
+void L2_grad_omp_N(myvector_t &, myvector_t &, myvector_t &, myvector_t &, myfloat_t &, myparam_t *, int);
 void harm_pot(myvector_t &, myfloat_t, myfloat_t, myfloat_t &, myvector_t &, int);
 void harm_pot(myvector_t &, myfloat_t, myvector_t &, myfloat_t &, myvector_t &, int);
 

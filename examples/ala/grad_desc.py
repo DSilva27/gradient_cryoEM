@@ -32,6 +32,24 @@ def add_noise(img, n_pixels, pixel_size, snr):
 
     return img_noise/var
 
+def gen_quat(size):
+    #Sonya's code
+    
+    np.random.seed(0)
+    quaternions = np.zeros((size, 4))
+    count = 0
+
+    while count < size:
+
+        quat = np.random.uniform(-1,1,4) #note this is a half-open interval, so 1 is not included but -1 is
+        norm = np.sqrt(np.sum(quat**2))
+
+        if ( 0.2 <= norm <= 1.0 ):
+            quaternions[count] = quat/norm
+            count += 1
+
+    return quaternions
+
 def calc_img(coord, n_pixels, pixel_size, sigma):
     
     n_atoms = coord.shape[1]
@@ -55,6 +73,7 @@ def grad_lu2(coord, Icalc, I_exp, n_pixels, pixel_size, sigma):
     n_atoms = coord.shape[1]
     norm =  (2 * np.pi * sigma**2 * n_atoms)
 
+
     grid_min = -pixel_size * (n_pixels - 1)*0.5
     grid_max = pixel_size * (n_pixels - 1)*0.5 + pixel_size
 
@@ -76,6 +95,67 @@ def grad_lu2(coord, Icalc, I_exp, n_pixels, pixel_size, sigma):
     s = np.sum((Icalc - I_exp)**2)
     return s, grad
 
+def grad_lu2_norm(coord, Icalc, I_exp, n_pixels, pixel_size, sigma):
+    
+    n_atoms = coord.shape[1]
+    norm =  (2 * np.pi * sigma**2 * n_atoms)
+
+    Cc = np.sum(Icalc)
+    Co = np.sum(I_exp)
+    Coc = np.sum(Icalc*I_exp)
+    Ccc = np.sum(Icalc**2)
+    
+    N = Coc / Ccc
+    mu = 0
+    
+    # N = (Cc*Co - n_pixels**2 * Coc)/(Cc**2 - n_pixels**2 * Ccc)
+    # mu = (Cc*Coc - Co*Ccc)/(Cc**2 - n_pixels**2 * Ccc)
+
+    grid_min = -pixel_size * (n_pixels - 1)*0.5
+    grid_max = pixel_size * (n_pixels - 1)*0.5 + pixel_size
+
+    x_grid = np.arange(grid_min, grid_max, pixel_size)
+    y_grid = np.arange(grid_min, grid_max, pixel_size)
+
+    grad = np.zeros_like(coord)
+
+    f2 = N*Icalc - I_exp + mu
+
+    f1 = np.exp( -0.5 * ( ((x_grid[:,None] - coord[0,:])/sigma)**2) )[:,None] * \
+         np.exp( -0.5 * ( ((y_grid[:,None] - coord[1,:])/sigma)**2) )
+
+    fx = (x_grid[:,None] - coord[0,:])[:, None] / sigma**2
+    fy = (y_grid[:,None] - coord[1,:])[None, :] / sigma**2
+
+
+    grad[0,:] = 2*N * np.sum( (f2.T * (fx*f1).T).T, axis=((0), (1))) / norm
+    grad[1,:] = 2*N * np.sum( (f2.T * (fy*f1).T).T, axis=((0), (1))) / norm
+
+    s = np.sum((N*Icalc - I_exp + mu)**2)
+
+    return s, grad
+    
+def num_test(coord, Iexp, n_pixels, pixel_size, sigma, dt, i=0, j=0):
+  
+    r = coord.copy()
+    Icalc = calc_img(r, n_pixels, pixel_size, sigma)
+    cv1, _ = grad_lu2_norm(r, Icalc, Iexp, n_pixels, pixel_size, sigma)
+    cv1_noN, _ = grad_lu2(r, Icalc, Iexp, n_pixels, pixel_size, sigma)
+
+    r[i,j] += dt
+    Icalc = calc_img(r, n_pixels, pixel_size, sigma)
+    cv2, grad2 = grad_lu2_norm(r, Icalc, Iexp, n_pixels, pixel_size, sigma)
+    cv2_noN, grad2_noN = grad_lu2(r, Icalc, Iexp, n_pixels, pixel_size, sigma)
+
+    num_grad = (cv2 - cv1)/dt
+    num_grad_noN = (cv2_noN - cv1_noN)/dt
+
+    err = np.abs( (num_grad - grad2[i,j])/num_grad )
+    err_noN = np.abs( (num_grad_noN - grad2_noN[i,j])/num_grad_noN)
+
+    print(f"With N: Num: {num_grad:3f}, Ana: {grad2[i,j]}, Err: {err}")
+    print(f"Without N: Num: {num_grad_noN:3f}, Ana: {grad2_noN[i,j]}, Err: {err_noN}")
+
 def grad_harmonic(coord, k, d0):
     
     grad = np.zeros_like(coord) # shape (3, N_ATOMS)
@@ -94,7 +174,7 @@ def grad_harmonic(coord, k, d0):
 
     return V_h, grad
 
-def grad_descent(init_coord, I_exp, N_imgs, *args):
+def grad_descent(grad_func, init_coord, I_exp, N_imgs, *args):
 
     N_steps, stride, learn_rate, tol, n_pixels, pixel_size, sigma, fact, k_h, d0 = args
 
@@ -118,7 +198,7 @@ def grad_descent(init_coord, I_exp, N_imgs, *args):
                 coord_rot = np.matmul(I_exp[j]["Q"], coord)
 
                 I_calc = calc_img(coord_rot, n_pixels, pixel_size, sigma)
-                cv, grad_l2_rot = grad_lu2(coord_rot, I_calc, I_exp[j]["I"], n_pixels, pixel_size, sigma)
+                cv, grad_l2_rot = grad_func(coord_rot, I_calc, I_exp[j]["I"], n_pixels, pixel_size, sigma)
 
                 grad_l2 += np.matmul(I_exp[j]["Q_inv"], grad_l2_rot)
 
@@ -187,6 +267,7 @@ def create_images(r_coord, quats, *args, prefix="img_", print_imgs=True):
 
         r_rot = np.matmul(rot_mat, r_coord)
         Iexp = calc_img(r_rot, N_PIXELS, PIXEL_SIZE, SIGMA)
+        Iexp = add_noise(Iexp, N_PIXELS, PIXEL_SIZE, SNR)
 
         if (print_imgs): print_image(f"{prefix}{i}.txt", Iexp, q)
         img = {"Q": rot_mat, "Q_inv":rot_mat_inv, "I": Iexp}
@@ -310,13 +391,13 @@ quat[2] = R.from_euler("y", 90, degrees=True).as_quat()
 N_PIXELS = 32
 PIXEL_SIZE = 0.5
 SIGMA = 0.5
-SNR = 0.0 # Unused at the moment
+SNR = 0.1 # Unused at the moment
 IMG_PFX = "ala_img_"
 N_IMGS = 3
 
 # Create/Load images
-# dataset = create_images(ref_sys, quat, N_PIXELS, PIXEL_SIZE, SIGMA, SNR, IMG_PFX, True) # images created = # quats
-dataset = load_dataset(N_IMGS, IMG_PFX)
+dataset = create_images(ref_sys, quat, N_PIXELS, PIXEL_SIZE, SIGMA, SNR, prefix=IMG_PFX, print_imgs=True) # images created = # quats
+# dataset = load_dataset(N_IMGS, IMG_PFX)
 
 # Prepare gradient Descent
 
@@ -326,8 +407,8 @@ ref_d = np.sqrt(np.sum( (ref_sys[:,1:] - ref_sys[:, :-1])**2, axis=0 ))
 print_ref_d("ref_ala.txt", ref_d)
 
 CUTOFF = 10 #Cutoff for neighboring pixels
-N_STEPS = 300000; STRIDE = 10000; LEARN_RATE = 0.001; TOL = 1e-8 # Parameters for gradient descent
-L2_WEIGHT = 1.0; HM_WEIGHT = 0.00 # Weights for the forces
+N_STEPS = 5000; STRIDE = 100; LEARN_RATE = 0.0001; TOL = -1#1e-8 # Parameters for gradient descent
+L2_WEIGHT = 1.0; HM_WEIGHT = 0.0 # Weights for the forces
 
 # Create parameters file
 PARAM_FNAME = "parameters.txt"
@@ -339,7 +420,7 @@ OUT_PFX = "ala_final_" # final coordinates saved as OUT_PFX + coords.txt
 NTOMP = 2
 
 # Run descent
-#grad_descent_cpp(MPI_RANKS, COORD_FILE, PARAM_FNAME, OUT_PFX, N_IMGS, IMG_PFX, N_STEPS, STRIDE, NTOMP, "ref_ala.txt")
+grad_descent_cpp(MPI_RANKS, COORD_FILE, PARAM_FNAME, OUT_PFX, N_IMGS, IMG_PFX, N_STEPS, STRIDE, NTOMP, "ref_ala.txt")
 
 print("End of gradient descent")
 print(f"The final coordinates have been uploaded to {OUT_PFX}coords.txt")
@@ -347,16 +428,17 @@ print(f"The final coordinates have been uploaded to {OUT_PFX}coords.txt")
 final_sys = np.loadtxt(f"{OUT_PFX}coords.txt", skiprows=1)
 colvar = np.loadtxt(f"{OUT_PFX}colvar.txt", skiprows=1)
 
+# num_test(sim_sys, dataset[0]["I"], N_PIXELS, PIXEL_SIZE, SIGMA, dt=0.001, i=0, j=0)
 
 # TODO Load value of the CV and the Harmonic Potential too (need to set up printing in c++)
 
-#######################################################
-# Uncomment if doing grad_descent with python
+# #######################################################
+# # Uncomment if doing grad_descent with python
 # gd_args = (N_STEPS, STRIDE, LEARN_RATE, TOL)
 # l2_args = (N_PIXELS, PIXEL_SIZE, SIGMA, L2_WEIGHT)
 # hm_args = (HM_WEIGHT, ref_d)
-# L2, VH, final_sys = grad_descent(sim_sys, dataset, N_IMGS, *gd_args, *l2_args, *hm_args) 
-#######################################################
+# L2, VH, final_sys = grad_descent(grad_lu2_norm, sim_sys, dataset, N_IMGS, *gd_args, *l2_args, *hm_args) 
+# #######################################################
 
 # Here are a few ways you can visualize the resulting data, I need to keep working on this
 sim_sys_mda.select_atoms("not name *H*").positions = final_sys.T
@@ -366,7 +448,7 @@ final_sys = sim_sys_mda.select_atoms("not name *H*").positions.T
 sim_sys_mda.select_atoms("not name *H*").write("final_ala.pdb")
 ref_sys_mda.select_atoms("not name *H*").write("ref_ala_noH.pdb")
 
-final_imgs = create_images(final_sys, quat, N_PIXELS, PIXEL_SIZE, SIGMA, SNR, print_imgs=False)
+final_imgs = create_images(final_sys, quat, N_PIXELS, PIXEL_SIZE, SIGMA, 0.0, print_imgs=False)
 
 # fig = plt.figure()
 # ax = fig.add_subplot(projection='3d')
@@ -398,3 +480,14 @@ ax2.legend()
 twin1.legend()
 
 plt.show()
+
+
+# fig2, ax2 = plt.subplots()
+# twin1 = ax2.twinx()
+
+# ax2.plot(L2, c="red", label="L2")
+# twin1.plot(VH, c="blue", label="V_Harm")
+# ax2.legend()
+# twin1.legend()
+
+# plt.show()

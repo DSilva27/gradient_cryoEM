@@ -306,7 +306,7 @@ quat[2] = R.from_euler("y", 90, degrees=True).as_quat()
 N_PIXELS = 32
 PIXEL_SIZE = 0.5
 SIGMA = 0.5
-SNR = 0.0 # Unused at the moment
+SNR = 0.0 
 IMG_PFX = "ala_img_"
 N_IMGS = 3
 
