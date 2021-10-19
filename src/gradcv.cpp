@@ -920,8 +920,9 @@ void calc_img_omp(myvector_t &r_a, myvector_t &I_c, myparam_t *PARAM, int ntomp)
       }
     }
 
+    #pragma omp for
+    for (int i=0; i<I_c.size(); i++) I_c[i] *= PARAM->norm;
   }
-  for (int i=0; i<I_c.size(); i++) I_c[i] *= PARAM->norm;
 }
 
 void L2_grad(myvector_t &r_a, myvector_t &I_c, myvector_t &I_e,

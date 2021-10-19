@@ -353,7 +353,8 @@ ref_sys_mda = center_system(ref_sys_mda) # Center your coordinates if they are n
 # *********************************************** From random noise ********************************************************
 sigma = 1
 select_filter = "not name *H*" # Change if needed (defines which atoms are selected from the pdb)
-ref_sys = ref_sys_mda.select_atoms(select_filter).positions.T # This returns a numpy array of shape (3, # atoms)
+ref_sys = ref_sys_mda.select_atoms(select_filter).positions.T/10 # This returns a numpy array of shape (3, # atoms)
+
 sim_sys_mda = mda.Universe("centered_ALA_initial.pdb")
 sim_sys = sim_sys_mda.select_atoms(select_filter).positions.T
 #sim_sys = ref_sys + np.random.randn(*ref_sys.shape) * sigma # sigma = standard deviation of the noise
@@ -381,11 +382,6 @@ print_coords(COORD_FILE, sim_sys)
 
 # TODO create a function that loads a set of quaternions and creates a dataset
 # TODO integrate wrapper with c++ function to create images 
-# Create quaternions
-quat = np.zeros((3, 4))
-quat[0] = R.from_euler("x", 0, degrees=True).as_quat()
-quat[1] = R.from_euler("x", 90, degrees=True).as_quat()
-quat[2] = R.from_euler("y", 90, degrees=True).as_quat()
 
 # Set image parameters
 N_PIXELS = 32
@@ -393,7 +389,15 @@ PIXEL_SIZE = 0.5
 SIGMA = 0.5
 SNR = 0.1 # Unused at the moment
 IMG_PFX = "ala_img_"
-N_IMGS = 3
+N_IMGS = 24
+
+# Create quaternions
+# quat = np.zeros((N_IMGS, 4))
+# quat[0] = R.from_euler("x", 0, degrees=True).as_quat()
+# quat[1] = R.from_euler("x", 90, degrees=True).as_quat()
+# quat[2] = R.from_euler("y", 90, degrees=True).as_quat()
+
+quat = gen_quat(N_IMGS)
 
 # Create/Load images
 dataset = create_images(ref_sys, quat, N_PIXELS, PIXEL_SIZE, SIGMA, SNR, prefix=IMG_PFX, print_imgs=True) # images created = # quats
@@ -407,7 +411,7 @@ ref_d = np.sqrt(np.sum( (ref_sys[:,1:] - ref_sys[:, :-1])**2, axis=0 ))
 print_ref_d("ref_ala.txt", ref_d)
 
 CUTOFF = 10 #Cutoff for neighboring pixels
-N_STEPS = 5000; STRIDE = 100; LEARN_RATE = 0.0001; TOL = -1#1e-8 # Parameters for gradient descent
+N_STEPS = 50000; STRIDE = 1000; LEARN_RATE = 0.0001; TOL = -1#1e-8 # Parameters for gradient descent
 L2_WEIGHT = 1.0; HM_WEIGHT = 0.0 # Weights for the forces
 
 # Create parameters file
