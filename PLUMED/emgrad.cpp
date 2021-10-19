@@ -162,7 +162,7 @@ EmGrad::EmGrad(const ActionOptions&ao):
     int start_img = rank*imgs_per_process;
     
 
-    for (int i = 0; i < exp_imgs.size(); i++) {
+    for (size_t i=0; i<exp_imgs.size(); i++) {
 
       exp_imgs[i].I = myvector_t(n_pixels*n_pixels, 0.0);
       exp_imgs[i].fname = img_fname + std::to_string(i+start_img) + ".txt";
@@ -706,7 +706,7 @@ void EmGrad::calculate() {
     //   myvector_t Icalc(n_pixels*n_pixels, 0.0);
 
     //   #pragma omp for reduction(vec_plmd_plus : emgrad_der) reduction(+ : s_cv)
-    //   for (int i=0; i<exp_imgs.size(); i++){
+    //   for (size_t i=0; i<exp_imgs.size(); i++){
 
     //     quaternion_rotation(exp_imgs[i].q, pos, r_rot);
 
@@ -730,7 +730,7 @@ void EmGrad::calculate() {
     myfloat_t s_tmp;
     myvector_t Icalc(n_pixels*n_pixels, 0.0);
 
-    for (int i=0; i<exp_imgs.size(); i++){
+    for (size_t i=0; i<exp_imgs.size(); i++){
 
       quaternion_rotation(exp_imgs[i].q, pos, r_rot);
 
